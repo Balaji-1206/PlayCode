@@ -4,7 +4,10 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import {
   ParseRequestSchema,
   ParsedProblemSchema,
+  type ParsedProblem,
 } from "@/lib/schemas/problem";
+import { storeProblemSession } from "@/lib/serverCache";
+import type { InternalLanguageKey } from "@/lib/execution/types";
 
 // ─── OpenAI client ────────────────────────────────────────────────────────────
 // Initialized once at module scope — reused across requests.
@@ -134,13 +137,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 6. Return the validated problem ─────────────────────────────────────
-    // SECURITY: We return the FULL object here because the frontend will
-    // immediately strip hidden test cases in Step 3 before displaying.
-    // In production, hidden tests would be stored in a database and never
-    // sent to the client at all. For now, the separation is enforced in
-    // the frontend store.
-    return NextResponse.json({ problem: validation.data }, { status: 200 });
+    // ── 6. Store hidden tests server-side and return safe problem ───────────
+    // SECURITY: Hidden test cases NEVER reach the browser.
+    // We store them in the server-side cache keyed by a random session ID.
+    // The browser receives only public tests + the session ID for grading.
+
+    const fullProblem: ParsedProblem = validation.data;
+
+    const problemSessionId = storeProblemSession(
+      fullProblem.testCases.hidden,
+      fullProblem.driverCode as Record<InternalLanguageKey, string>
+    );
+
+    // Build the safe problem — strip hidden tests before sending to client.
+    const safeProblem: Omit<ParsedProblem, "testCases"> & {
+      testCases: { public: ParsedProblem["testCases"]["public"] };
+    } = {
+      ...fullProblem,
+      testCases: {
+        public: fullProblem.testCases.public,
+        // hidden is intentionally omitted
+      },
+    };
+
+    return NextResponse.json(
+      { problem: safeProblem, problemSessionId },
+      { status: 200 }
+    );
 
   } catch (error) {
     if (error instanceof OpenAI.APIError) {

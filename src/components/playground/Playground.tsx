@@ -7,9 +7,10 @@ import { LANGUAGES } from "@/lib/languages";
 import { SAMPLE_PROBLEM } from "@/lib/sampleProblem";
 import LanguageSelector from "@/components/playground/LanguageSelector";
 import RunButton from "@/components/playground/RunButton";
+import SubmitButton from "@/components/playground/SubmitButton";
 import ProblemPanel from "@/components/playground/ProblemPanel";
 import Terminal from "@/components/playground/Terminal";
-import type { ExecutionResult, Problem } from "@/types";
+import type { ExecutionResult, Problem, TestResult } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
 
 const CodeEditor = dynamic(() => import("@/components/editor/CodeEditor"), {
@@ -21,10 +22,7 @@ const CodeEditor = dynamic(() => import("@/components/editor/CodeEditor"), {
   ),
 });
 
-// ─── Adapter: convert ParsedProblem → Problem (for ProblemPanel) ──────────────
-// ProblemPanel uses the simpler Problem type from types/index.ts.
-// ParsedProblem has more fields (driverCode, starterCode, etc.) that aren't
-// needed in the panel. This adapter keeps ProblemPanel decoupled from OpenAI.
+// ─── Adapter ──────────────────────────────────────────────────────────────────
 
 function adaptParsedProblem(parsed: ParsedProblem): Problem {
   return {
@@ -38,39 +36,75 @@ function adaptParsedProblem(parsed: ParsedProblem): Problem {
   };
 }
 
-// ─── Mock runner ──────────────────────────────────────────────────────────────
-// Simulates execution with mock results.
-// Step 3 will replace this with real POST /api/code/execute calls.
+// ─── API response type ────────────────────────────────────────────────────────
 
-async function mockRun(publicTestCases: ParsedProblem["testCases"]["public"] | null): Promise<ExecutionResult> {
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+interface ExecuteApiResponse {
+  status: "success" | "compile_error";
+  publicResults: Array<{
+    caseIndex: number;
+    status: "pass" | "fail" | "error";
+    input: string;
+    expected: string;
+    received: string;
+    executionTime: number;
+    stderr: string;
+  }>;
+  hiddenSummary: { total: number; passed: number } | null;
+  executionTime: number;
+  memoryUsage: number;
+  stderr: string;
+  error?: string;
+}
 
-  const testResults = publicTestCases
-    ? publicTestCases.map((tc, i) => ({
-        caseIndex: i,
-        status: "pass" as const,
-        input: tc.input,
-        expected: tc.expectedOutput,
-        received: tc.expectedOutput,
-        executionTime: Math.floor(Math.random() * 20) + 5,
-      }))
-    : [
-        { caseIndex: 0, status: "pass" as const, input: "nums=[2,7,11,15], target=9", expected: "[0,1]", received: "[0,1]", executionTime: 12 },
-        { caseIndex: 1, status: "pass" as const, input: "nums=[3,2,4], target=6", expected: "[1,2]", received: "[1,2]", executionTime: 9 },
-        { caseIndex: 2, status: "pass" as const, input: "nums=[3,3], target=6", expected: "[0,1]", received: "[0,1]", executionTime: 8 },
-      ];
+// ─── Execution call ───────────────────────────────────────────────────────────
+
+async function callExecuteApi(
+  code: string,
+  language: string,
+  problemSessionId: string | null,
+  publicTests: Array<{ input: string; expectedOutput: string }>,
+  runType: "run" | "submit"
+): Promise<ExecutionResult> {
+  const response = await fetch("/api/code/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code,
+      language,
+      problemSessionId,
+      publicTests,
+      runType,
+    }),
+  });
+
+  const data = (await response.json()) as ExecuteApiResponse;
+
+  if (!response.ok) {
+    throw new Error(data.error ?? `Execution failed: ${response.status}`);
+  }
+
+  // Map API response → ExecutionResult
+  const testResults: TestResult[] = data.publicResults.map((r) => ({
+    caseIndex: r.caseIndex,
+    status: r.status as TestResult["status"],
+    input: r.input,
+    expected: r.expected,
+    received: r.received,
+    executionTime: r.executionTime,
+  }));
 
   return {
-    status: "success",
+    status: data.status === "compile_error" ? "error" : "success",
     stdout: testResults.map((r) => r.received).join("\n"),
-    stderr: "",
-    executionTime: 42,
-    memoryUsage: 18.4,
+    stderr: data.stderr,
+    executionTime: data.executionTime,
+    memoryUsage: data.memoryUsage,
     testResults,
+    hiddenSummary: data.hiddenSummary,
   };
 }
 
-// ─── Main playground layout ───────────────────────────────────────────────────
+// ─── Playground layout ────────────────────────────────────────────────────────
 
 export default function Playground() {
   const {
@@ -79,34 +113,95 @@ export default function Playground() {
     setCode,
     setOutput,
     setIsRunning,
+    setIsSubmitting,
     setViewMode,
     isRunning,
+    isSubmitting,
     parsedProblem,
+    problemSessionId,
   } = usePlaygroundStore();
 
-  // Resolve which problem to display:
-  // If we have an AI-parsed problem, use it; otherwise show the sample.
   const displayProblem: Problem = parsedProblem
     ? adaptParsedProblem(parsedProblem)
     : SAMPLE_PROBLEM;
+
+  // Public test cases to run against (visible to user)
+  const publicTests = parsedProblem?.testCases.public.map((tc) => ({
+    input: tc.input,
+    expectedOutput: tc.expectedOutput,
+  })) ?? [
+    // Fallback for sample problem (no AI parsing)
+    { input: "[2,7,11,15]\n9", expectedOutput: "[0, 1]" },
+    { input: "[3,2,4]\n6", expectedOutput: "[1, 2]" },
+    { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
+  ];
+
+  // ── Run (public tests only) ────────────────────────────────────────────────
 
   const handleRun = async () => {
     setIsRunning(true);
     setOutput(null);
     try {
-      const publicTests = parsedProblem?.testCases.public ?? null;
-      const result = await mockRun(publicTests);
+      const result = await callExecuteApi(
+        code,
+        selectedLanguage,
+        problemSessionId,
+        publicTests,
+        "run"
+      );
       setOutput(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Execution failed";
+      setOutput({
+        status: "error",
+        stdout: "",
+        stderr: message,
+        executionTime: 0,
+        memoryUsage: 0,
+        testResults: [],
+        hiddenSummary: null,
+      });
     } finally {
       setIsRunning(false);
     }
   };
 
+  // ── Submit (public + hidden tests) ─────────────────────────────────────────
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setOutput(null);
+    try {
+      const result = await callExecuteApi(
+        code,
+        selectedLanguage,
+        problemSessionId,
+        publicTests,
+        "submit"
+      );
+      setOutput(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Submission failed";
+      setOutput({
+        status: "error",
+        stdout: "",
+        stderr: message,
+        executionTime: 0,
+        memoryUsage: 0,
+        testResults: [],
+        hiddenSummary: null,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const isbusy = isRunning || isSubmitting;
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* ══════════════════════ Top Navbar ══════════════════════ */}
+      {/* ══════════════════════ Navbar ══════════════════════ */}
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-700/60 bg-slate-900 px-4 py-2.5">
-        {/* Back to parser */}
         <button
           onClick={() => setViewMode("parser")}
           aria-label="Back to problem parser"
@@ -115,7 +210,6 @@ export default function Playground() {
           <ArrowLeft className="h-4 w-4" />
         </button>
 
-        {/* Logo / brand */}
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-600 text-sm font-bold text-white shadow-lg shadow-violet-900/40">
             D
@@ -127,54 +221,33 @@ export default function Playground() {
 
         <div className="mx-2 h-5 w-px bg-slate-700" />
 
-        {/* Problem title + source badge */}
         <div className="hidden items-center gap-2 sm:flex">
-          <span className="truncate text-sm text-slate-300 font-medium">
+          <span className="truncate text-sm font-medium text-slate-300">
             {displayProblem.title}
           </span>
           {parsedProblem && (
-            <span className="rounded-full bg-violet-600/20 border border-violet-600/30 px-2 py-0.5 text-xs text-violet-400">
+            <span className="rounded-full border border-violet-600/30 bg-violet-600/20 px-2 py-0.5 text-xs text-violet-400">
               AI Generated
             </span>
           )}
         </div>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Controls */}
         <LanguageSelector />
         <RunButton onRun={handleRun} />
-
-        {/* Submit button */}
-        <button
-          id="submit-button"
-          disabled={isRunning}
-          aria-label="Submit solution"
-          className="
-            inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600
-            px-4 text-sm font-semibold text-white shadow-sm transition-all
-            hover:bg-violet-500 active:scale-95
-            disabled:cursor-not-allowed disabled:opacity-60
-            focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2
-            focus:ring-offset-slate-900
-          "
-        >
-          <SendHorizontal className="h-4 w-4" />
-          <span className="hidden sm:inline">Submit</span>
-        </button>
+        <SubmitButton onSubmit={handleSubmit} />
       </header>
 
-      {/* ══════════════════════ Main Content ══════════════════════ */}
+      {/* ══════════════════════ Content ══════════════════════ */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* ── Left: Problem Panel ── */}
+        {/* Left: Problem */}
         <div className="hidden w-[42%] shrink-0 border-r border-slate-700/60 md:flex md:flex-col">
           <ProblemPanel problem={displayProblem} />
         </div>
 
-        {/* ── Right: Editor + Terminal ── */}
+        {/* Right: Editor + Terminal */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Editor toolbar */}
           <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/60 bg-slate-800/50 px-3 py-1.5">
             <span className="text-xs text-slate-500">
               {LANGUAGES[selectedLanguage].label}
@@ -185,7 +258,6 @@ export default function Playground() {
             </span>
           </div>
 
-          {/* Monaco Editor */}
           <div className="min-h-0 flex-[65]">
             <CodeEditor
               language={selectedLanguage}
@@ -194,12 +266,10 @@ export default function Playground() {
             />
           </div>
 
-          {/* Divider */}
           <div className="h-px shrink-0 bg-slate-700/60" />
 
-          {/* Terminal */}
           <div className="min-h-0 flex-[35]">
-            <Terminal />
+            <Terminal isSubmitMode={isSubmitting || (usePlaygroundStore.getState().output?.hiddenSummary != null)} />
           </div>
         </div>
       </div>

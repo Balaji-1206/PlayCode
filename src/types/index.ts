@@ -41,12 +41,16 @@ export interface TestResult {
 }
 
 export interface ExecutionResult {
-  status: "success" | "error" | "timeout";
+  status: "success" | "error" | "timeout" | "compile_error";
   stdout: string;
   stderr: string;
   executionTime: number;
   memoryUsage: number;
   testResults: TestResult[];
+  hiddenSummary?: {
+    total: number;
+    passed: number;
+  } | null;
 }
 
 // ─── Store Types ───────────────────────────────────────────────────────────────
@@ -64,4 +68,6 @@ export interface PlaygroundState {
   viewMode: ViewMode;
   isParsing: boolean;
   parseError: string | null;
+  // Step 3 additions
+  problemSessionId: string | null;
 }

@@ -6,7 +6,7 @@ import { LANGUAGES, DEFAULT_LANGUAGE } from "@/lib/languages";
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 interface PlaygroundActions {
-  // Editor actions
+  // Editor
   setLanguage: (lang: LanguageKey) => void;
   setCode: (code: string) => void;
   setActiveTestCase: (index: number) => void;
@@ -15,11 +15,11 @@ interface PlaygroundActions {
   setIsSubmitting: (submitting: boolean) => void;
   resetOutput: () => void;
 
-  // Step 2: Parser actions
+  // Step 2: Parser
   setViewMode: (mode: ViewMode) => void;
   setIsParsing: (parsing: boolean) => void;
   setParseError: (error: string | null) => void;
-  loadParsedProblem: (problem: ParsedProblem, language: LanguageKey) => void;
+  loadParsedProblem: (problem: ParsedProblem, language: LanguageKey, sessionId: string) => void;
   parsedProblem: ParsedProblem | null;
 }
 
@@ -27,7 +27,7 @@ type PlaygroundStore = PlaygroundState & PlaygroundActions;
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
+export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
   // ── Initial state ──────────────────────────────────────────────────────────
   selectedLanguage: DEFAULT_LANGUAGE,
   code: LANGUAGES[DEFAULT_LANGUAGE].defaultCode,
@@ -36,19 +36,20 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
   isRunning: false,
   isSubmitting: false,
 
-  // Step 2 state
-  viewMode: "parser",         // Start on the parser form, not the playground
+  // Step 2
+  viewMode: "parser",
   isParsing: false,
   parseError: null,
   parsedProblem: null,
+
+  // Step 3
+  problemSessionId: null,
 
   // ── Editor actions ─────────────────────────────────────────────────────────
 
   setLanguage: (lang) =>
     set((state) => ({
       selectedLanguage: lang,
-      // Switch to AI-generated starter code for the new language if available,
-      // otherwise fall back to the default template.
       code: state.parsedProblem
         ? state.parsedProblem.starterCode[lang]
         : state.code === LANGUAGES[state.selectedLanguage].defaultCode
@@ -68,7 +69,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
 
   resetOutput: () => set({ output: null }),
 
-  // ── Step 2: Parser actions ─────────────────────────────────────────────────
+  // ── Step 2 actions ─────────────────────────────────────────────────────────
 
   setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -76,7 +77,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
 
   setParseError: (error) => set({ parseError: error }),
 
-  loadParsedProblem: (problem, language) => {
+  loadParsedProblem: (problem, language, sessionId) => {
     set({
       parsedProblem: problem,
       selectedLanguage: language,
@@ -85,6 +86,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
       output: null,
       parseError: null,
       activeTestCase: 0,
+      problemSessionId: sessionId,  // Store session ID for execute calls
     });
   },
 }));

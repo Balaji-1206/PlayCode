@@ -117,7 +117,7 @@ export default function ProblemParser() {
         }),
       });
 
-      const data = await response.json() as { problem?: ParsedProblem; error?: string };
+      const data = await response.json() as { problem?: ParsedProblem; problemSessionId?: string; error?: string };
 
       if (!response.ok) {
         throw new Error(data.error ?? `Server error: ${response.status}`);
@@ -127,7 +127,11 @@ export default function ProblemParser() {
         throw new Error("Server returned an empty problem. Please try again.");
       }
 
-      loadParsedProblem(data.problem, language);
+      if (!data.problemSessionId) {
+        throw new Error("Server did not return a session ID. Please try again.");
+      }
+
+      loadParsedProblem(data.problem, language, data.problemSessionId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setParseError(message);
