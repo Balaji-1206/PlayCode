@@ -51,6 +51,8 @@ export interface ExecutionResult {
 
 // ─── Store Types ───────────────────────────────────────────────────────────────
 
+export type ViewMode = "parser" | "playground";
+
 export interface PlaygroundState {
   selectedLanguage: LanguageKey;
   code: string;
@@ -58,4 +60,8 @@ export interface PlaygroundState {
   output: ExecutionResult | null;
   isRunning: boolean;
   isSubmitting: boolean;
+  // Step 2 additions
+  viewMode: ViewMode;
+  isParsing: boolean;
+  parseError: string | null;
 }
