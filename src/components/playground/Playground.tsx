@@ -7,12 +7,23 @@ import {
   Panel,
   PanelResizeHandle,
 } from "react-resizable-panels";
-import { ArrowLeft, Code2, BookOpen, TerminalSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  Code2,
+  BookOpen,
+  TerminalSquare,
+  ChevronDown,
+  Keyboard,
+  Sparkles,
+  Check,
+  X,
+} from "lucide-react";
 
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { LANGUAGES } from "@/lib/languages";
 import { SAMPLE_PROBLEM } from "@/lib/sampleProblem";
+import { PROBLEM_CATALOG } from "@/lib/problemCatalog";
 
 import LanguageSelector from "@/components/playground/LanguageSelector";
 import RunButton from "@/components/playground/RunButton";
@@ -20,6 +31,7 @@ import SubmitButton from "@/components/playground/SubmitButton";
 import ProblemPanel from "@/components/playground/ProblemPanel";
 import EditorToolbar from "@/components/playground/EditorToolbar";
 import BottomPanel from "@/components/playground/BottomPanel";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 
 import type { ExecutionResult, Problem, TestResult } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
@@ -64,6 +76,15 @@ interface ExecuteApiResponse {
     stderr: string;
   }>;
   hiddenSummary: { total: number; passed: number } | null;
+  failedHiddenCase?: {
+    caseIndex: number;
+    input: string;
+    expected: string;
+    received: string;
+    executionTime?: number;
+    stderr?: string;
+    description?: string;
+  } | null;
   executionTime: number;
   memoryUsage: number;
   stderr: string;
@@ -102,6 +123,7 @@ async function callExecuteApi(
     memoryUsage: data.memoryUsage,
     testResults,
     hiddenSummary: data.hiddenSummary,
+    failedHiddenCase: data.failedHiddenCase ?? null,
   };
 }
 
@@ -145,11 +167,14 @@ export default function Playground() {
     isSubmitting,
     parsedProblem,
     problemSessionId,
+    loadParsedProblem,
   } = usePlaygroundStore();
 
   const [fontSize, setFontSize] = useState(14);
   const [hideProblempanel, setHideProblemPanel] = useState(false);
   const [mobileView, setMobileView] = useState<MobileView>("problem");
+  const [isProblemMenuOpen, setIsProblemMenuOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   const displayProblem: Problem = parsedProblem
     ? adaptParsedProblem(parsedProblem)
@@ -163,6 +188,36 @@ export default function Playground() {
     { input: "[3,2,4]\n6", expectedOutput: "[1, 2]" },
     { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
   ];
+
+  // ── On-Demand AI Complexity Analysis ─────────────────────────────────────────
+
+  const handleAnalyze = useCallback(async () => {
+    setAnalysisStatus("loading");
+    setAnalysisError(null);
+    setAnalysis(null);
+    setActiveBottomTab("analysis");
+    try {
+      const analysis = await callAnalyzeApi(
+        code,
+        selectedLanguage,
+        displayProblem.title,
+        displayProblem.description
+      );
+      setAnalysis(analysis);
+      setAnalysisStatus("ready");
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+      setAnalysisStatus("error");
+    }
+  }, [
+    code,
+    selectedLanguage,
+    displayProblem,
+    setAnalysisStatus,
+    setAnalysisError,
+    setAnalysis,
+    setActiveBottomTab,
+  ]);
 
   // ── Run ──────────────────────────────────────────────────────────────────────
 
@@ -232,66 +287,157 @@ export default function Playground() {
   // ── Navbar ────────────────────────────────────────────────────────────────────
 
   const navbar = (
-    <header className="flex shrink-0 items-center gap-3 border-b border-slate-700/60 bg-slate-900 px-4 py-2.5">
+    <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 dark:border-[#263244] bg-white dark:bg-[#111827] px-4 py-2 transition-colors">
       <button
         onClick={() => setViewMode("parser")}
         aria-label="Back to parser"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white cursor-pointer"
       >
         <ArrowLeft className="h-4 w-4" />
       </button>
 
       <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-600 text-sm font-bold text-white shadow-lg shadow-violet-900/40">
-          D
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-black text-white shadow-xs">
+          ◈
         </div>
-        <span className="hidden font-bold tracking-tight text-white sm:block">
+        <span className="hidden font-bold tracking-tight text-slate-900 dark:text-white sm:block">
           DSA Playground
         </span>
       </div>
 
-      <div className="mx-2 hidden h-5 w-px bg-slate-700 sm:block" />
+      <div className="mx-1 hidden h-4 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
 
-      <div className="hidden items-center gap-2 sm:flex">
-        <span className="max-w-[200px] truncate text-sm font-medium text-slate-300">
-          {displayProblem.title}
-        </span>
-        {parsedProblem && (
-          <span className="rounded-full border border-violet-600/30 bg-violet-600/20 px-2 py-0.5 text-xs text-violet-400">
-            AI Generated
+      {/* Problem Switcher Dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => setIsProblemMenuOpen((v) => !v)}
+          className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs transition-all hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+        >
+          <span className="max-w-[140px] truncate sm:max-w-[190px]">
+            {displayProblem.title}
           </span>
+          {parsedProblem && (
+            <span className="hidden rounded-full border border-blue-200 dark:border-blue-600/30 bg-blue-50 dark:bg-blue-600/20 px-1.5 py-0.2 text-[10px] text-blue-600 dark:text-blue-300 md:inline-block font-bold">
+              AI
+            </span>
+          )}
+          <ChevronDown
+            className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
+              isProblemMenuOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+
+        {isProblemMenuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setIsProblemMenuOpen(false)}
+            />
+            <div className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-[#111827]/95 p-1.5 shadow-xl backdrop-blur-md">
+              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Switch Challenge
+              </div>
+              <div className="space-y-1">
+                {Object.entries(PROBLEM_CATALOG).map(([key, p]) => {
+                  const isSelected =
+                    displayProblem.title.toLowerCase() === p.title.toLowerCase();
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        loadParsedProblem(p, selectedLanguage, key);
+                        setIsProblemMenuOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition-colors cursor-pointer ${
+                        isSelected
+                          ? "border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-600/20 font-semibold text-blue-700 dark:text-blue-300"
+                          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{p.title}</span>
+                          {isSelected && (
+                            <Check className="h-3 w-3 shrink-0 text-blue-600 dark:text-blue-400" />
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <span
+                            className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
+                              p.difficulty === "Easy"
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                                : p.difficulty === "Medium"
+                                ? "bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                                : "bg-rose-50 text-rose-700 dark:bg-red-500/20 dark:text-red-300"
+                            }`}
+                          >
+                            {p.difficulty}
+                          </span>
+                          <span className="truncate text-[10px] text-slate-400 dark:text-slate-500">
+                            {p.tags.slice(0, 2).join(", ")}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+              <button
+                onClick={() => {
+                  setIsProblemMenuOpen(false);
+                  setViewMode("parser");
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-600/10 cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Parse Custom Problem Statement</span>
+              </button>
+            </div>
+          </>
         )}
       </div>
 
       <div className="flex-1" />
 
-      {/* Keyboard shortcut hints — desktop only */}
-      <div className="hidden items-center gap-3 text-xs text-slate-600 lg:flex">
+      {/* Keyboard shortcut hints & Dialog trigger */}
+      <div className="hidden items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400 lg:flex">
         <span>
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-[10px]">
+          <kbd className="rounded border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800 px-1 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
             Ctrl
           </kbd>{" "}
           +{" "}
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-[10px]">
+          <kbd className="rounded border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800 px-1 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
             Enter
           </kbd>{" "}
           Run
         </span>
         <span>
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-[10px]">
+          <kbd className="rounded border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800 px-1 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
             ⇧
           </kbd>{" "}
           +{" "}
-          <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-[10px]">
+          <kbd className="rounded border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800 px-1 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
             Ctrl+Enter
           </kbd>{" "}
           Submit
         </span>
+
+        <button
+          onClick={() => setIsShortcutsOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 transition-all hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shadow-2xs"
+          title="Keyboard Shortcuts"
+        >
+          <Keyboard className="h-3.5 w-3.5 text-blue-500" />
+          <span>Shortcuts</span>
+        </button>
       </div>
 
       <LanguageSelector />
       <RunButton onRun={handleRun} />
       <SubmitButton onSubmit={handleSubmit} />
+      <ThemeToggle />
     </header>
   );
 
@@ -311,8 +457,8 @@ export default function Playground() {
           onClick={() => setMobileView(view)}
           className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-xs transition-colors ${
             mobileView === view
-              ? "text-violet-400"
-              : "text-slate-500 hover:text-slate-300"
+              ? "text-blue-600 dark:text-blue-400 font-semibold"
+              : "text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
           }`}
         >
           {icon}
@@ -335,13 +481,13 @@ export default function Playground() {
             minSize={20}
             maxSize={55}
           >
-            <div className="h-full border-r border-slate-700/60">
+            <div className="h-full border-r border-slate-200 dark:border-[#263244]">
               <ProblemPanel problem={displayProblem} />
             </div>
           </Panel>
 
-          <PanelResizeHandle className="group relative flex w-1.5 items-center justify-center bg-slate-800 transition-colors hover:bg-violet-600/40 active:bg-violet-600">
-            <div className="h-8 w-0.5 rounded-full bg-slate-600 transition-colors group-hover:bg-violet-400" />
+          <PanelResizeHandle className="group relative flex w-1.5 items-center justify-center bg-[#F1F6FA] dark:bg-[#0B1120] transition-colors hover:bg-blue-500/20 active:bg-blue-500">
+            <div className="h-8 w-0.5 rounded-full bg-slate-300 dark:bg-slate-700 transition-colors group-hover:bg-blue-400" />
           </PanelResizeHandle>
         </>
       )}
@@ -368,12 +514,12 @@ export default function Playground() {
             </div>
           </Panel>
 
-          <PanelResizeHandle className="group relative flex h-1.5 items-center justify-center bg-slate-800 transition-colors hover:bg-violet-600/40 active:bg-violet-600">
-            <div className="h-0.5 w-8 rounded-full bg-slate-600 transition-colors group-hover:bg-violet-400" />
+          <PanelResizeHandle className="group relative flex h-1.5 items-center justify-center bg-[#F1F6FA] dark:bg-[#0B1120] transition-colors hover:bg-blue-500/20 active:bg-blue-500">
+            <div className="h-0.5 w-8 rounded-full bg-slate-300 dark:bg-slate-700 transition-colors group-hover:bg-blue-400" />
           </PanelResizeHandle>
 
           <Panel id="terminal" defaultSize={38} minSize={15}>
-            <BottomPanel />
+            <BottomPanel onAnalyze={handleAnalyze} />
           </Panel>
         </PanelGroup>
       </Panel>
@@ -409,20 +555,92 @@ export default function Playground() {
       )}
       {mobileView === "output" && (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <BottomPanel />
+          <BottomPanel onAnalyze={handleAnalyze} />
         </div>
       )}
     </div>
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden bg-[#F6F9FC] dark:bg-[#0B1120] transition-colors">
       {navbar}
       <div className="hidden min-h-0 flex-1 md:flex md:flex-col">
         {desktopLayout}
       </div>
       {mobileLayout}
       {mobileTabBar}
+
+      {/* Keyboard Shortcuts Dialog */}
+      {isShortcutsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/30 dark:bg-blue-600/20 dark:text-blue-400">
+                  <Keyboard className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Keyboard Shortcuts</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Boost your algorithmic speed with quick hotkeys</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShortcutsOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-800/50 p-3">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Run Code (Public Tests)</span>
+                <div className="flex items-center gap-1">
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Ctrl</kbd>
+                  <span className="text-slate-400">+</span>
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Enter</kbd>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-800/50 p-3">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Submit Code (Full Suite + Big-O Analysis)</span>
+                <div className="flex items-center gap-1">
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Ctrl</kbd>
+                  <span className="text-slate-400">+</span>
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Shift</kbd>
+                  <span className="text-slate-400">+</span>
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Enter</kbd>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-800/50 p-3">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Toggle Fullscreen Code Area</span>
+                <div className="flex items-center gap-1">
+                  <span className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-300 shadow-2xs">Editor Maximize Button</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-800/50 p-3">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Indent / Outdent Selection</span>
+                <div className="flex items-center gap-1">
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">Tab</kbd>
+                  <span className="text-slate-400">/</span>
+                  <kbd className="rounded border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs">⇧ + Tab</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 text-center">
+              <button
+                onClick={() => setIsShortcutsOpen(false)}
+                className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-500 transition-colors cursor-pointer"
+              >
+                Got It, Let's Code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

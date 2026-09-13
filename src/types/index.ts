@@ -40,6 +40,16 @@ export interface TestResult {
   executionTime?: number;
 }
 
+export interface FailedHiddenCase {
+  caseIndex: number;
+  input: string;
+  expected: string;
+  received: string;
+  executionTime?: number;
+  stderr?: string;
+  description?: string;
+}
+
 export interface ExecutionResult {
   status: "success" | "error" | "timeout" | "compile_error";
   stdout: string;
@@ -51,6 +61,7 @@ export interface ExecutionResult {
     total: number;
     passed: number;
   } | null;
+  failedHiddenCase?: FailedHiddenCase | null;
 }
 
 // ─── Analysis Types ───────────────────────────────────────────────────────────────
@@ -80,4 +91,6 @@ export interface PlaygroundState {
   activeBottomTab: BottomTab;
   analysisStatus: AnalysisStatus;
   analysisError: string | null;
+  // Theme
+  theme: "light" | "dark";
 }

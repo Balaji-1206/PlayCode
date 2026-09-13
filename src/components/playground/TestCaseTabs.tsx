@@ -14,10 +14,10 @@ interface TestCaseTabsProps {
 
 function StatusDot({ status }: { status: TestResult["status"] }) {
   const colors = {
-    pass: "bg-emerald-400",
-    fail: "bg-red-400",
-    error: "bg-amber-400",
-    idle: "bg-slate-600",
+    pass: "bg-emerald-500",
+    fail: "bg-red-500",
+    error: "bg-amber-500",
+    idle: "bg-slate-400 dark:bg-slate-600",
   };
   return (
     <span
@@ -44,12 +44,12 @@ export default function TestCaseTabs({
             key={result.caseIndex}
             onClick={() => onSelect(result.caseIndex)}
             className={`
-              inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5
-              text-xs font-medium transition-colors
+              inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5
+              text-xs font-semibold transition-colors cursor-pointer
               ${
                 isActive
-                  ? "bg-slate-700 text-white"
-                  : "text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                  ? "bg-slate-200 text-slate-900 dark:bg-slate-800 dark:text-white"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
               }
             `}
           >

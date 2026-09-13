@@ -36,6 +36,10 @@ interface PlaygroundActions {
   setAnalysisError: (error: string | null) => void;
   setAnalysis: (analysis: CodeAnalysis | null) => void;
   analysis: CodeAnalysis | null;
+
+  // Theme actions
+  setTheme: (theme: "light" | "dark") => void;
+  toggleTheme: () => void;
 }
 
 type PlaygroundStore = PlaygroundState & PlaygroundActions;
@@ -65,6 +69,9 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
   analysisStatus: "idle",
   analysisError: null,
   analysis: null,
+
+  // Theme
+  theme: "light",
 
   // ── Editor actions ─────────────────────────────────────────────────────────
 
@@ -127,4 +134,37 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
   setAnalysisError: (error) => set({ analysisError: error }),
 
   setAnalysis: (analysis) => set({ analysis }),
+
+  // ── Theme actions ──────────────────────────────────────────────────────────
+
+  setTheme: (theme) => {
+    if (typeof document !== "undefined") {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+      try {
+        localStorage.setItem("dsa-theme", theme);
+      } catch {}
+    }
+    set({ theme });
+  },
+
+  toggleTheme: () => {
+    set((state) => {
+      const nextTheme = state.theme === "dark" ? "light" : "dark";
+      if (typeof document !== "undefined") {
+        if (nextTheme === "dark") {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+        try {
+          localStorage.setItem("dsa-theme", nextTheme);
+        } catch {}
+      }
+      return { theme: nextTheme };
+    });
+  },
 }));

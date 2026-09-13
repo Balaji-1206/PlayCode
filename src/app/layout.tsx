@@ -21,12 +21,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
-      {/*
-        h-screen + overflow-hidden on body ensures the playground fills the
-        full viewport without a page-level scrollbar — just like LeetCode.
-      */}
-      <body className="h-screen overflow-hidden bg-slate-950 font-sans antialiased">
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("dsa-theme");if(t==="dark"){document.documentElement.classList.add("dark");}else{document.documentElement.classList.remove("dark");}}catch(e){}})();`,
+          }}
+        />
+      </head>
+      <body className="h-screen overflow-hidden bg-[#F6F9FC] dark:bg-[#0B1120] text-[#0F172A] dark:text-[#F8FAFC] font-sans antialiased">
         {children}
       </body>
     </html>

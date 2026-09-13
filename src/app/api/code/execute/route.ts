@@ -260,11 +260,21 @@ import java.io.*;
 
   // ── 6. Execute against hidden tests (submit only) ──────────────────────────
   let hiddenSummary: { total: number; passed: number } | null = null;
+  let failedHiddenCase: {
+    caseIndex: number;
+    input: string;
+    expected: string;
+    received: string;
+    executionTime?: number;
+    stderr?: string;
+    description?: string;
+  } | null = null;
 
   if (runType === "submit" && hiddenTests.length > 0 && !hasCompileError) {
     let hiddenPassed = 0;
 
-    for (const tc of hiddenTests) {
+    for (let i = 0; i < hiddenTests.length; i++) {
+      const tc = hiddenTests[i];
       try {
         const result = await provider.execute({
           code: combinedCode,
@@ -275,13 +285,53 @@ import java.io.*;
 
         totalExecutionTime += result.executionTime;
 
-        if (result.exitCode === 0 && outputsMatch(result.stdout, tc.expectedOutput)) {
+        const isMatch = result.exitCode === 0 && outputsMatch(result.stdout, tc.expectedOutput);
+        if (isMatch) {
           hiddenPassed++;
+        } else {
+          // If this is the first failed hidden test case, capture it for user inspection
+          if (!failedHiddenCase) {
+            failedHiddenCase = {
+              caseIndex: i + 1,
+              input: tc.input,
+              expected: tc.expectedOutput,
+              received: result.timedOut
+                ? "Time Limit Exceeded"
+                : safeTruncate(result.stdout, 200),
+              executionTime: result.executionTime,
+              stderr: result.stderr,
+              description: tc.description,
+            };
+          }
         }
-        // If failed: we intentionally do NOT expose input/expected — just count.
-      } catch {
-        // Provider-level error: count as failed, don't crash the whole submission.
+      } catch (err) {
+        // Provider-level error: count as failed
+        if (!failedHiddenCase) {
+          failedHiddenCase = {
+            caseIndex: i + 1,
+            input: tc.input,
+            expected: tc.expectedOutput,
+            received: "Execution Error",
+            executionTime: 0,
+            stderr: err instanceof Error ? err.message : "Execution failed",
+            description: tc.description,
+          };
+        }
       }
+    }
+
+    // If public tests failed (meaning submission is wrong overall), but hidden tests passed,
+    // also provide 1 hidden test case for inspection
+    const publicAllPass = publicResults.every((r) => r.status === "pass");
+    if (!publicAllPass && !failedHiddenCase && hiddenTests.length > 0) {
+      const sampleTc = hiddenTests[0];
+      failedHiddenCase = {
+        caseIndex: 1,
+        input: sampleTc.input,
+        expected: sampleTc.expectedOutput,
+        received: "Passed",
+        description: sampleTc.description,
+      };
     }
 
     hiddenSummary = {
@@ -295,6 +345,7 @@ import java.io.*;
     status: hasCompileError ? "compile_error" : "success",
     publicResults,
     hiddenSummary,
+    failedHiddenCase,
     executionTime: totalExecutionTime,
     // Memory usage is not available via Piston; set to 0 for now.
     memoryUsage: 0,

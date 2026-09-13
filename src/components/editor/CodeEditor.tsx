@@ -1,12 +1,10 @@
 "use client";
 
-// Monaco Editor must be loaded client-side only (it uses browser APIs).
-// We wrap it with dynamic import in the parent component.
-
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import type { LanguageKey } from "@/types";
 import { LANGUAGES } from "@/lib/languages";
+import { usePlaygroundStore } from "@/stores/playgroundStore";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +50,8 @@ const EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions = {
 
 export default function CodeEditor({ language, value, onChange, fontSize = 14 }: CodeEditorProps) {
   const monacoLanguage = LANGUAGES[language].monacoLanguage;
+  const { theme } = usePlaygroundStore();
+  const isDark = theme === "dark";
 
   const editorOptions = {
     ...EDITOR_OPTIONS,
@@ -59,7 +59,6 @@ export default function CodeEditor({ language, value, onChange, fontSize = 14 }:
   };
 
   const handleMount: OnMount = (editor) => {
-    // Focus the editor automatically when mounted
     editor.focus();
   };
 
@@ -68,22 +67,24 @@ export default function CodeEditor({ language, value, onChange, fontSize = 14 }:
   };
 
   return (
-    <Editor
-      height="100%"
-      language={monacoLanguage}
-      value={value}
-      theme="vs-dark"
-      options={editorOptions}
-      onMount={handleMount}
-      onChange={handleChange}
-      loading={
-        <div className="flex h-full items-center justify-center bg-[#1e1e1e]">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
-            <span className="text-sm text-slate-400">Loading editor…</span>
+    <div className="h-full w-full bg-white dark:bg-[#111827] transition-colors">
+      <Editor
+        height="100%"
+        language={monacoLanguage}
+        value={value}
+        theme={isDark ? "vs-dark" : "vs"}
+        options={editorOptions}
+        onMount={handleMount}
+        onChange={handleChange}
+        loading={
+          <div className={`flex h-full items-center justify-center ${isDark ? "bg-[#111827]" : "bg-white"}`}>
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+              <span className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>Loading editor…</span>
+            </div>
           </div>
-        </div>
-      }
-    />
+        }
+      />
+    </div>
   );
 }
