@@ -1,6 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ParsedProblemSchema, type ParsedProblem } from "@/lib/schemas/problem";
 import { CodeAnalysisSchema, type CodeAnalysis } from "@/lib/schemas/analysis";
+import {
+  getCachedAnalysis,
+  setCachedAnalysis,
+  getCachedProblem,
+  setCachedProblem,
+  getProblemCacheKey,
+} from "./aiCache";
 
 // ─── Gemini Client ─────────────────────────────────────────────────────────────
 
@@ -136,6 +143,13 @@ export async function parseProblemWithGemini(
   systemPrompt: string,
   userMessage: string
 ): Promise<ParsedProblem> {
+  const cacheKey = getProblemCacheKey(userMessage);
+  const cached = getCachedProblem(cacheKey);
+  if (cached) {
+    console.log("Serving problem parse from in-memory cache (0 API calls)");
+    return cached;
+  }
+
   const apiKey = getGeminiApiKey();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
@@ -208,6 +222,7 @@ ${userMessage}`;
     throw new Error("AI generated problem structure did not match required schema.");
   }
 
+  setCachedProblem(cacheKey, validated.data);
   return validated.data;
 }
 
@@ -215,8 +230,17 @@ ${userMessage}`;
 
 export async function analyzeCodeWithGemini(
   systemPrompt: string,
-  userMessage: string
+  userMessage: string,
+  cacheKey?: string
 ): Promise<CodeAnalysis> {
+  if (cacheKey) {
+    const cached = getCachedAnalysis(cacheKey);
+    if (cached) {
+      console.log("Serving code analysis from in-memory cache (0 API calls)");
+      return cached;
+    }
+  }
+
   const apiKey = getGeminiApiKey();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
@@ -233,30 +257,29 @@ export async function analyzeCodeWithGemini(
 
 You MUST output ONLY valid JSON matching this exact structure:
 {
-  "approach": "Detailed description of the approach",
+  "approach": "Detailed description of the algorithmic approach",
   "timeComplexity": {
-    "best": "O(n)",
+    "best": "O(1)",
     "average": "O(n)",
     "worst": "O(n)",
-    "explanation": "Why this time complexity"
+    "explanation": "Clear explanation of time complexity",
+    "dominantOperations": ["Single pass array scan: O(n)", "Hash table lookup: O(1) avg"],
+    "complexityRank": 3
   },
   "spaceComplexity": {
+    "value": "O(n)",
     "auxiliary": "O(n)",
-    "explanation": "Why this space complexity"
+    "isAuxiliary": true,
+    "explanation": "Clear explanation of auxiliary memory",
+    "allocatedStructures": ["Hash map storing up to n elements: O(n)"]
   },
   "isOptimal": true,
   "optimalComplexity": "O(n)",
+  "optimalSpaceComplexity": "O(1)",
   "qualityScore": 9,
-  "strengths": ["Strength 1", "Strength 2"],
-  "bottlenecks": ["Bottleneck 1 if any"],
-  "optimizationSuggestions": [
-    {
-      "title": "Optimization title",
-      "description": "How to optimize",
-      "impact": "high" | "medium" | "low",
-      "resultingComplexity": "O(1)"
-    }
-  ],
+  "strengths": ["Optimal O(n) time complexity using hash map", "Single-pass algorithm"],
+  "bottlenecks": [],
+  "optimizationSuggestions": [],
   "overallVerdict": "1-2 sentences summarizing the solution",
   "languageSpecificFeedback": "Feedback for the specific language"
 }
@@ -265,12 +288,41 @@ ${userMessage}`;
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();
-  const raw = safeJsonParse<unknown>(text);
+  const raw = safeJsonParse<Record<string, unknown>>(text);
+
+  // Normalize / fallback for missing fields if Gemini emits slight variations
+  if (raw && typeof raw === "object") {
+    if (raw.spaceComplexity && typeof raw.spaceComplexity === "object") {
+      const sc = raw.spaceComplexity as Record<string, unknown>;
+      if (!sc.value && sc.auxiliary) sc.value = sc.auxiliary;
+      if (sc.isAuxiliary === undefined) sc.isAuxiliary = true;
+      if (!sc.auxiliary && sc.value) sc.auxiliary = sc.value;
+      if (!sc.allocatedStructures) sc.allocatedStructures = [];
+    }
+    if (raw.timeComplexity && typeof raw.timeComplexity === "object") {
+      const tc = raw.timeComplexity as Record<string, unknown>;
+      if (!tc.dominantOperations) tc.dominantOperations = [];
+      if (!tc.complexityRank) {
+        const avg = String(tc.average || tc.worst || "");
+        if (avg.includes("1")) tc.complexityRank = 1;
+        else if (avg.includes("log")) tc.complexityRank = 2;
+        else if (avg.includes("n²") || avg.includes("n^2")) tc.complexityRank = 5;
+        else if (avg.includes("n log n")) tc.complexityRank = 4;
+        else if (avg.includes("n")) tc.complexityRank = 3;
+        else tc.complexityRank = 3;
+      }
+    }
+    if (!raw.optimalSpaceComplexity) raw.optimalSpaceComplexity = "O(1)";
+  }
 
   const validated = CodeAnalysisSchema.safeParse(raw);
   if (!validated.success) {
     console.error("Gemini analysis failed schema validation:", validated.error);
     throw new Error("AI analysis structure did not match required schema.");
+  }
+
+  if (cacheKey) {
+    setCachedAnalysis(cacheKey, validated.data);
   }
 
   return validated.data;

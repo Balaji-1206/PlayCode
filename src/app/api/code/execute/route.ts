@@ -21,14 +21,59 @@ function normalizeOutput(output: string): string {
   return output.trim().replace(/\r\n/g, "\n").replace(/\s+$/gm, "");
 }
 
+function compareValuesWithTolerance(valA: unknown, valB: unknown, epsilon = 1e-5): boolean {
+  if (typeof valA === "number" && typeof valB === "number") {
+    return Math.abs(valA - valB) <= epsilon;
+  }
+  if (Array.isArray(valA) && Array.isArray(valB)) {
+    if (valA.length !== valB.length) return false;
+    return valA.every((item, idx) => compareValuesWithTolerance(item, valB[idx], epsilon));
+  }
+  if (valA && valB && typeof valA === "object" && typeof valB === "object") {
+    const keysA = Object.keys(valA).sort();
+    const keysB = Object.keys(valB).sort();
+    if (keysA.length !== keysB.length) return false;
+    return keysA.every((k) =>
+      compareValuesWithTolerance(
+        (valA as Record<string, unknown>)[k],
+        (valB as Record<string, unknown>)[k],
+        epsilon
+      )
+    );
+  }
+  return String(valA).trim().toLowerCase() === String(valB).trim().toLowerCase();
+}
+
 function outputsMatch(actual: string, expected: string): boolean {
   const normActual = normalizeOutput(actual);
   const normExpected = normalizeOutput(expected);
   if (normActual === normExpected) return true;
-  // Also compare with inner whitespace stripped for JSON arrays/tuples e.g. [0, 1] vs [0,1]
+
+  // Case-insensitive boolean comparison: "True" == "true", "False" == "false"
+  if (normActual.toLowerCase() === normExpected.toLowerCase()) return true;
+
+  // Compact whitespace comparison: "[0, 1]" == "[0,1]"
   const compactActual = normActual.replace(/\s+/g, "");
   const compactExpected = normExpected.replace(/\s+/g, "");
-  return compactActual === compactExpected;
+  if (compactActual === compactExpected) return true;
+
+  // Single number / floating point comparison with 1e-5 epsilon tolerance
+  const numActual = Number(normActual);
+  const numExpected = Number(normExpected);
+  if (!Number.isNaN(numActual) && !Number.isNaN(numExpected)) {
+    return Math.abs(numActual - numExpected) <= 1e-5;
+  }
+
+  // Deep JSON numeric / array comparison (e.g. [6.00000, 0.50000] vs [6.0, 0.5])
+  try {
+    const jsonActual = JSON.parse(normActual);
+    const jsonExpected = JSON.parse(normExpected);
+    if (compareValuesWithTolerance(jsonActual, jsonExpected)) return true;
+  } catch {
+    // Non-JSON format, continue
+  }
+
+  return false;
 }
 
 // ─── Safe output for error display ────────────────────────────────────────────

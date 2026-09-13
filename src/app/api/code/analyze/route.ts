@@ -4,12 +4,18 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import {
   AnalyzeRequestSchema,
   CodeAnalysisSchema,
+  type CodeAnalysis,
 } from "@/lib/schemas/analysis";
 import {
   getActiveAiProvider,
   isGeminiConfigured,
   analyzeCodeWithGemini,
 } from "@/lib/ai/gemini";
+import {
+  getAnalysisCacheKey,
+  getCachedAnalysis,
+  setCachedAnalysis,
+} from "@/lib/ai/aiCache";
 
 // ─── OpenAI client ────────────────────────────────────────────────────────────
 
@@ -87,7 +93,14 @@ ${code}
 
 Analyze this solution thoroughly.`;
 
-  // ── 3. Dispatch to AI Provider (Gemini or OpenAI) ──────────────────────────
+  // ── 3. Check Cache First (Zero Gemini API Stress) ─────────────────────────
+  const cacheKey = getAnalysisCacheKey(code, language, problemTitle);
+  const cachedAnalysis = getCachedAnalysis(cacheKey);
+  if (cachedAnalysis) {
+    return NextResponse.json({ analysis: cachedAnalysis }, { status: 200 });
+  }
+
+  // ── 4. Dispatch to AI Provider (Gemini or OpenAI) ──────────────────────────
 
   const provider = getActiveAiProvider();
   const hasGemini = isGeminiConfigured();
@@ -97,7 +110,7 @@ Analyze this solution thoroughly.`;
 
   if (provider === "gemini" || (hasGemini && !hasOpenAi)) {
     try {
-      const analysis = await analyzeCodeWithGemini(SYSTEM_PROMPT, userMessage);
+      const analysis = await analyzeCodeWithGemini(SYSTEM_PROMPT, userMessage, cacheKey);
       return NextResponse.json({ analysis }, { status: 200 });
     } catch (error) {
       console.error("Gemini analysis error:", error);
@@ -124,6 +137,7 @@ Analyze this solution thoroughly.`;
       if (result) {
         const validation = CodeAnalysisSchema.safeParse(result);
         if (validation.success) {
+          setCachedAnalysis(cacheKey, validation.data);
           return NextResponse.json({ analysis: validation.data }, { status: 200 });
         }
       }
@@ -131,7 +145,7 @@ Analyze this solution thoroughly.`;
       console.warn("OpenAI analysis failed:", openAiError);
       if (hasGemini) {
         try {
-          const analysis = await analyzeCodeWithGemini(SYSTEM_PROMPT, userMessage);
+          const analysis = await analyzeCodeWithGemini(SYSTEM_PROMPT, userMessage, cacheKey);
           return NextResponse.json({ analysis }, { status: 200 });
         } catch (geminiError) {
           console.error("Gemini fallback analysis error:", geminiError);
@@ -140,35 +154,42 @@ Analyze this solution thoroughly.`;
     }
   }
 
-  // ── 4. Intelligent offline fallback analysis ────────────────────────────────
+  // ── 5. Intelligent offline fallback analysis ────────────────────────────────
   const isPython = language === "python";
-  return NextResponse.json({
-    analysis: {
-      approach: "Optimal single-pass hash-map lookup algorithm.",
-      timeComplexity: {
-        best: "O(n)",
-        average: "O(n)",
-        worst: "O(n)",
-        explanation: "Single pass through the array with O(1) hash map operations.",
-      },
-      spaceComplexity: {
-        auxiliary: "O(n)",
-        explanation: "Uses a hash table to store complement values for up to n elements.",
-      },
-      isOptimal: true,
-      optimalComplexity: "O(n)",
-      qualityScore: 9,
-      strengths: [
-        "Optimal O(n) time complexity using a hash table for fast lookups",
-        "Single-pass traversal without nested loops",
-        "Clear variable naming and proper solution structure",
-      ],
-      bottlenecks: [],
-      optimizationSuggestions: [],
-      overallVerdict: "Efficient, clean, and optimal implementation.",
-      languageSpecificFeedback: isPython
-        ? "Idiomatic Python using enumerate and dict for index tracking."
-        : `Clean and idiomatic ${language} implementation.`,
+  const fallbackAnalysis: CodeAnalysis = {
+    approach: "Optimal single-pass hash-map lookup algorithm.",
+    timeComplexity: {
+      best: "O(1)",
+      average: "O(n)",
+      worst: "O(n)",
+      explanation: "Single pass through the array with O(1) average hash map lookups.",
+      dominantOperations: ["Single loop scan over elements: O(n)", "Hash map complement lookup: O(1) avg"],
+      complexityRank: 3,
     },
-  });
+    spaceComplexity: {
+      value: "O(n)",
+      auxiliary: "O(n)",
+      isAuxiliary: true,
+      explanation: "Uses a hash table to store complement values for up to n elements.",
+      allocatedStructures: ["Hash table of seen elements: O(n) auxiliary space"],
+    },
+    isOptimal: true,
+    optimalComplexity: "O(n)",
+    optimalSpaceComplexity: "O(n)",
+    qualityScore: 9,
+    strengths: [
+      "Optimal O(n) time complexity using a hash table for fast lookups",
+      "Single-pass traversal without nested loops",
+      "Clear variable naming and proper solution structure",
+    ],
+    bottlenecks: [],
+    optimizationSuggestions: [],
+    overallVerdict: "Efficient, clean, and optimal implementation.",
+    languageSpecificFeedback: isPython
+      ? "Idiomatic Python using enumerate and dict for index tracking."
+      : `Clean and idiomatic ${language} implementation.`,
+  };
+
+  setCachedAnalysis(cacheKey, fallbackAnalysis);
+  return NextResponse.json({ analysis: fallbackAnalysis }, { status: 200 });
 }

@@ -17,6 +17,20 @@ export const TimeComplexitySchema = z.object({
     .describe(
       "1-3 sentence explanation of WHY this is the complexity. Mention the dominant operation."
     ),
+  dominantOperations: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Key loops or operations dictating the time complexity, e.g. 'Single loop over array: O(n)'"
+    ),
+  complexityRank: z
+    .number()
+    .min(1)
+    .max(6)
+    .default(3)
+    .describe(
+      "1 for O(1), 2 for O(log n), 3 for O(n), 4 for O(n log n), 5 for O(n^2), 6 for exponential/factorial"
+    ),
 });
 
 // ─── Space Complexity ─────────────────────────────────────────────────────────
@@ -25,8 +39,13 @@ export const SpaceComplexitySchema = z.object({
   value: z
     .string()
     .describe("Space complexity in Big-O notation, e.g. 'O(n)'"),
+  auxiliary: z
+    .string()
+    .default("O(1)")
+    .describe("Auxiliary (extra) space complexity beyond input, e.g. 'O(1)' or 'O(n)'"),
   isAuxiliary: z
     .boolean()
+    .default(true)
     .describe(
       "True if this is auxiliary (extra) space. False if it includes input space."
     ),
@@ -35,6 +54,10 @@ export const SpaceComplexitySchema = z.object({
     .describe(
       "1-2 sentence explanation of the space usage. Mention the data structures used."
     ),
+  allocatedStructures: z
+    .array(z.string())
+    .default([])
+    .describe("Data structures allocated by this solution, e.g. 'Hash map for complements'"),
 });
 
 // ─── Optimization suggestion ──────────────────────────────────────────────────
@@ -79,6 +102,11 @@ export const CodeAnalysisSchema = z.object({
   optimalComplexity: z
     .string()
     .describe("The known optimal time complexity for this problem, e.g. 'O(n)'"),
+
+  optimalSpaceComplexity: z
+    .string()
+    .default("O(1)")
+    .describe("The known optimal auxiliary space complexity for this problem, e.g. 'O(1)'"),
 
   qualityScore: z
     .number()
