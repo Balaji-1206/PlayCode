@@ -40,6 +40,8 @@ function cleanJson(raw: string): string {
   return cleaned.trim();
 }
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+
 // ─── Problem Parsing with Gemini ──────────────────────────────────────────────
 
 export async function parseProblemWithGemini(
@@ -50,9 +52,8 @@ export async function parseProblemWithGemini(
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  // gemini-2.0-flash is current standard, falls back gracefully
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: GEMINI_MODEL,
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.2,
@@ -133,7 +134,7 @@ export async function analyzeCodeWithGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: GEMINI_MODEL,
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.1,
