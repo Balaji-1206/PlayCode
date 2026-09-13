@@ -5,7 +5,7 @@ import { z } from "zod";
 export const ExampleSchema = z.object({
   input: z.string().describe("The raw input string for this example"),
   output: z.string().describe("The expected output string"),
-  explanation: z.string().optional().describe("Optional explanation of the example"),
+  explanation: z.string().nullable().describe("Optional explanation of the example"),
 });
 
 // ─── Function parameter ───────────────────────────────────────────────────────

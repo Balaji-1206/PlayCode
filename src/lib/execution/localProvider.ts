@@ -14,6 +14,29 @@ import type {
 // Executes user code using locally installed runtimes (Python, Node, g++, Java).
 // Provides ultra-fast execution (<50ms) and works offline with zero API limits.
 
+// ─── Compilation cache ────────────────────────────────────────────────────────
+// Compiles C++ and Java code once per code version, allowing multiple test cases
+// to run against the pre-compiled binary in <20ms each rather than re-compiling.
+
+const compilationCache = new Map<
+  string,
+  { binaryPath: string; dir: string; expiresAt: number }
+>();
+
+function cleanExpiredBinaries() {
+  const now = Date.now();
+  for (const [hash, entry] of compilationCache.entries()) {
+    if (now > entry.expiresAt) {
+      try {
+        fs.rmSync(entry.dir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+      compilationCache.delete(hash);
+    }
+  }
+}
+
 export class LocalProvider implements ExecutionProvider {
   readonly name = "Local";
 
@@ -26,11 +49,87 @@ export class LocalProvider implements ExecutionProvider {
   async execute(request: ExecutionRequest): Promise<ExecutionResponse> {
     const lang = request.language as InternalLanguageKey;
     const timeoutMs = request.timeoutMs ?? this.defaultTimeoutMs;
+    cleanExpiredBinaries();
+
+    const startTime = Date.now();
+
+    // ── C++ (compiled with caching) ──────────────────────────────────────────
+    if (lang === "cpp") {
+      const { createHash } = await import("crypto");
+      const hash = createHash("sha256").update(request.code).digest("hex");
+      const cached = compilationCache.get(hash);
+
+      if (cached && fs.existsSync(cached.binaryPath)) {
+        return await this.runProcess(cached.binaryPath, [], request.stdin, cached.dir, timeoutMs);
+      }
+
+      const buildDir = path.join(os.tmpdir(), `playcode_cpp_${hash.slice(0, 12)}`);
+      fs.mkdirSync(buildDir, { recursive: true });
+      const srcPath = path.join(buildDir, "solution.cpp");
+      const outPath = path.join(buildDir, "solution.exe");
+      fs.writeFileSync(srcPath, request.code, "utf-8");
+
+      const compileRes = await this.runProcess("g++", [srcPath, "-O2", "-o", outPath], "", buildDir, 10000);
+      if (compileRes.exitCode !== 0) {
+        return {
+          stdout: "",
+          stderr: compileRes.stderr || "C++ compilation failed",
+          exitCode: compileRes.exitCode,
+          timedOut: false,
+          executionTime: Date.now() - startTime,
+          memoryMb: 0,
+        };
+      }
+
+      compilationCache.set(hash, {
+        binaryPath: outPath,
+        dir: buildDir,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+
+      return await this.runProcess(outPath, [], request.stdin, buildDir, timeoutMs);
+    }
+
+    // ── Java (compiled with caching) ─────────────────────────────────────────
+    if (lang === "java") {
+      const { createHash } = await import("crypto");
+      const hash = createHash("sha256").update(request.code).digest("hex");
+      const cached = compilationCache.get(hash);
+
+      if (cached && fs.existsSync(cached.binaryPath)) {
+        return await this.runProcess("java", ["-cp", cached.dir, "Main"], request.stdin, cached.dir, timeoutMs);
+      }
+
+      const buildDir = path.join(os.tmpdir(), `playcode_java_${hash.slice(0, 12)}`);
+      fs.mkdirSync(buildDir, { recursive: true });
+      const srcPath = path.join(buildDir, "Main.java");
+      fs.writeFileSync(srcPath, request.code, "utf-8");
+
+      const compileRes = await this.runProcess("javac", [srcPath], "", buildDir, 10000);
+      if (compileRes.exitCode !== 0) {
+        return {
+          stdout: "",
+          stderr: compileRes.stderr || "Java compilation failed",
+          exitCode: compileRes.exitCode,
+          timedOut: false,
+          executionTime: Date.now() - startTime,
+          memoryMb: 0,
+        };
+      }
+
+      compilationCache.set(hash, {
+        binaryPath: path.join(buildDir, "Main.class"),
+        dir: buildDir,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+
+      return await this.runProcess("java", ["-cp", buildDir, "Main"], request.stdin, buildDir, timeoutMs);
+    }
+
+    // ── Scripting languages (temp file per run) ──────────────────────────────
     const id = randomUUID();
     const tempDir = path.join(os.tmpdir(), `playcode_${id}`);
     fs.mkdirSync(tempDir, { recursive: true });
-
-    const startTime = Date.now();
 
     try {
       if (lang === "python") {
@@ -45,53 +144,12 @@ export class LocalProvider implements ExecutionProvider {
         return await this.runProcess("node", [filePath], request.stdin, tempDir, timeoutMs);
       }
 
-      if (lang === "cpp") {
-        const srcPath = path.join(tempDir, "solution.cpp");
-        const outPath = path.join(tempDir, "solution.exe");
-        fs.writeFileSync(srcPath, request.code, "utf-8");
-
-        // Compile
-        const compileRes = await this.runProcess("g++", [srcPath, "-O2", "-o", outPath], "", tempDir, 10000);
-        if (compileRes.exitCode !== 0) {
-          return {
-            stdout: "",
-            stderr: compileRes.stderr || "C++ compilation failed",
-            exitCode: compileRes.exitCode,
-            timedOut: false,
-            executionTime: Date.now() - startTime,
-            memoryMb: 0,
-          };
-        }
-
-        return await this.runProcess(outPath, [], request.stdin, tempDir, timeoutMs);
-      }
-
-      if (lang === "java") {
-        const srcPath = path.join(tempDir, "Main.java");
-        fs.writeFileSync(srcPath, request.code, "utf-8");
-
-        // Compile
-        const compileRes = await this.runProcess("javac", [srcPath], "", tempDir, 10000);
-        if (compileRes.exitCode !== 0) {
-          return {
-            stdout: "",
-            stderr: compileRes.stderr || "Java compilation failed",
-            exitCode: compileRes.exitCode,
-            timedOut: false,
-            executionTime: Date.now() - startTime,
-            memoryMb: 0,
-          };
-        }
-
-        return await this.runProcess("java", ["-cp", tempDir, "Main"], request.stdin, tempDir, timeoutMs);
-      }
-
       throw new Error(`Local execution is not supported for ${lang}. Please install runtime or configure an external provider.`);
     } finally {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch {
-        // Ignore cleanup failure
+        // ignore
       }
     }
   }
@@ -112,6 +170,10 @@ export class LocalProvider implements ExecutionProvider {
       const child = spawn(cmd, args, {
         cwd,
         windowsHide: true,
+        env: {
+          ...process.env,
+          PATH: `C:\\msys64\\ucrt64\\bin;${process.env.PATH ?? ""}`,
+        },
         stdio: ["pipe", "pipe", "pipe"],
       });
 

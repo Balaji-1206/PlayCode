@@ -102,12 +102,44 @@ export async function POST(request: NextRequest) {
     ];
   }
 
+// ─── Code preparation helper ──────────────────────────────────────────────────
+// Ensures essential standard library headers/imports are included at the top
+// for C++ and Java so classes like vector, string, stack compile properly.
+
+function prepareCombinedCode(code: string, driverCode: string, language: string): string {
+  if (language === "cpp") {
+    const headers = `#include <iostream>
+#include <vector>
+#include <string>
+#include <stack>
+#include <queue>
+#include <map>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <sstream>
+using namespace std;
+`;
+    const userCodeWithHeaders = code.includes("<iostream>") || code.includes("<vector>")
+      ? code
+      : `${headers}\n${code}`;
+    return driverCode ? `${userCodeWithHeaders}\n\n${driverCode}` : userCodeWithHeaders;
+  }
+
+  if (language === "java") {
+    const imports = `import java.util.*;
+import java.io.*;
+`;
+    const userCodeWithImports = code.includes("import ") ? code : `${imports}\n${code}`;
+    return driverCode ? `${userCodeWithImports}\n\n${driverCode}` : userCodeWithImports;
+  }
+
+  return driverCode ? `${code}\n\n${driverCode}` : code;
+}
+
   // ── 4. Combine user code with driver code ─────────────────────────────────
-  // The driver is appended after the user's solution so it can reference
-  // the function/class defined by the user.
-  const combinedCode = driverCode
-    ? `${code}\n\n${driverCode}`
-    : code;
+  const combinedCode = prepareCombinedCode(code, driverCode, language);
 
   // ── 5. Execute against public tests ───────────────────────────────────────
   const publicResults: Array<{

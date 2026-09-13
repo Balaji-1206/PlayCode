@@ -7,20 +7,36 @@ import {
   type ParsedProblem,
 } from "@/lib/schemas/problem";
 import { storeProblemSession } from "@/lib/serverCache";
+import { findMatchingCatalogProblem } from "@/lib/problemCatalog";
 import type { InternalLanguageKey } from "@/lib/execution/types";
 
+// ─── Helper to build client-safe problem with server-cached hidden tests ──────
+
+function buildSafeProblemResponse(fullProblem: ParsedProblem) {
+  const problemSessionId = storeProblemSession(
+    fullProblem.testCases.hidden,
+    fullProblem.driverCode as Record<InternalLanguageKey, string>
+  );
+
+  const safeProblem: Omit<ParsedProblem, "testCases"> & {
+    testCases: { public: ParsedProblem["testCases"]["public"] };
+  } = {
+    ...fullProblem,
+    testCases: {
+      public: fullProblem.testCases.public,
+    },
+  };
+
+  return { problem: safeProblem, problemSessionId };
+}
+
 // ─── OpenAI client ────────────────────────────────────────────────────────────
-// Initialized once at module scope — reused across requests.
-// The API key is read from the environment variable OPENAI_API_KEY.
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 // ─── System prompt ────────────────────────────────────────────────────────────
-// This prompt tells the model exactly what role it plays and what quality
-// of output we expect. It is kept separate from the user content so that
-// we can tune it independently in later steps.
 
 const SYSTEM_PROMPT = `You are an expert competitive programming judge and DSA instructor.
 
@@ -81,15 +97,28 @@ export async function POST(request: NextRequest) {
 
   const { problemStatement, examples, constraints } = parseResult.data;
 
-  // ── 2. Check OpenAI API key ─────────────────────────────────────────────────
-  if (!process.env.OPENAI_API_KEY) {
+  // ── 2. Check offline catalog first for instant response ────────────────────
+  const catalogMatch = findMatchingCatalogProblem(
+    problemStatement,
+    `${examples ?? ""} ${constraints ?? ""}`
+  );
+  if (catalogMatch) {
+    const data = buildSafeProblemResponse(catalogMatch);
+    return NextResponse.json(data, { status: 200 });
+  }
+
+  // ── 3. Check OpenAI API key for novel problems ──────────────────────────────
+  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "your_openai_api_key_here") {
     return NextResponse.json(
-      { error: "OpenAI API key not configured. Add OPENAI_API_KEY to your .env.local file." },
-      { status: 500 }
+      {
+        error:
+          "OpenAI API key not configured. Please add a valid OPENAI_API_KEY to your .env.local file, or try one of the instant built-in examples (Two Sum, Valid Parentheses, Maximum Subarray).",
+      },
+      { status: 401 }
     );
   }
 
-  // ── 3. Build the user message ───────────────────────────────────────────────
+  // ── 4. Build the user message ───────────────────────────────────────────────
   const userMessage = [
     "## Problem Statement",
     problemStatement.trim(),
@@ -99,11 +128,7 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join("\n");
 
-  // ── 4. Call OpenAI with structured output ───────────────────────────────────
-  // `zodResponseFormat` tells OpenAI to return JSON that strictly matches
-  // our Zod schema. If it can't, OpenAI will return an error instead of
-  // malformed JSON — this is the key safety guarantee.
-
+  // ── 5. Call OpenAI with structured output ───────────────────────────────────
   try {
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
@@ -112,8 +137,8 @@ export async function POST(request: NextRequest) {
         { role: "user", content: userMessage },
       ],
       response_format: zodResponseFormat(ParsedProblemSchema, "parsed_problem"),
-      temperature: 0.2, // Low temperature = more deterministic, structured output
-      max_tokens: 8000, // Problems with 15 hidden tests can be large
+      temperature: 0.2,
+      max_tokens: 8000,
     });
 
     const parsed = completion.choices[0].message.parsed;
@@ -125,9 +150,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 5. Validate the response against our schema ─────────────────────────
-    // Even though OpenAI guarantees the shape, we re-validate to catch any
-    // subtle semantic issues before sending to the client.
     const validation = ParsedProblemSchema.safeParse(parsed);
     if (!validation.success) {
       console.error("AI output failed Zod validation:", validation.error);
@@ -137,33 +159,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 6. Store hidden tests server-side and return safe problem ───────────
-    // SECURITY: Hidden test cases NEVER reach the browser.
-    // We store them in the server-side cache keyed by a random session ID.
-    // The browser receives only public tests + the session ID for grading.
-
     const fullProblem: ParsedProblem = validation.data;
-
-    const problemSessionId = storeProblemSession(
-      fullProblem.testCases.hidden,
-      fullProblem.driverCode as Record<InternalLanguageKey, string>
-    );
-
-    // Build the safe problem — strip hidden tests before sending to client.
-    const safeProblem: Omit<ParsedProblem, "testCases"> & {
-      testCases: { public: ParsedProblem["testCases"]["public"] };
-    } = {
-      ...fullProblem,
-      testCases: {
-        public: fullProblem.testCases.public,
-        // hidden is intentionally omitted
-      },
-    };
-
-    return NextResponse.json(
-      { problem: safeProblem, problemSessionId },
-      { status: 200 }
-    );
+    const data = buildSafeProblemResponse(fullProblem);
+    return NextResponse.json(data, { status: 200 });
 
   } catch (error) {
     if (error instanceof OpenAI.APIError) {
@@ -177,7 +175,10 @@ export async function POST(request: NextRequest) {
       }
       if (error.status === 429) {
         return NextResponse.json(
-          { error: "OpenAI rate limit exceeded. Please wait a moment and try again." },
+          {
+            error:
+              "OpenAI credit quota or rate limit reached (429). Add credits at platform.openai.com/settings/organization/billing, or practice with the instant built-in examples.",
+          },
           { status: 429 }
         );
       }
@@ -194,9 +195,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Unexpected error in /api/problems/parse:", error);
+    const message = error instanceof Error ? error.message : "An unexpected error occurred. Please try again.";
+    console.error("Error in /api/problems/parse:", message);
     return NextResponse.json(
-      { error: "An unexpected error occurred. Please try again." },
+      { error: message },
       { status: 500 }
     );
   }

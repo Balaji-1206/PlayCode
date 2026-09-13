@@ -53,7 +53,7 @@ export const OptimizationSuggestionSchema = z.object({
     ),
   resultingComplexity: z
     .string()
-    .optional()
+    .nullable()
     .describe("The new time complexity after applying this optimization, if different"),
 });
 
@@ -116,7 +116,7 @@ export const CodeAnalysisSchema = z.object({
 
   languageSpecificFeedback: z
     .string()
-    .optional()
+    .nullable()
     .describe(
       "Optional: 1 sentence of language-specific idiomatic feedback (e.g., use enumerate in Python instead of range(len(...)))"
     ),
