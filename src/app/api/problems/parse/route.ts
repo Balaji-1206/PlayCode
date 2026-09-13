@@ -8,6 +8,11 @@ import {
 } from "@/lib/schemas/problem";
 import { storeProblemSession } from "@/lib/serverCache";
 import { findMatchingCatalogProblem } from "@/lib/problemCatalog";
+import {
+  getActiveAiProvider,
+  isGeminiConfigured,
+  parseProblemWithGemini,
+} from "@/lib/ai/gemini";
 import type { InternalLanguageKey } from "@/lib/execution/types";
 
 // ─── Helper to build client-safe problem with server-cached hidden tests ──────
@@ -107,12 +112,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, { status: 200 });
   }
 
-  // ── 3. Check OpenAI API key for novel problems ──────────────────────────────
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "your_openai_api_key_here") {
+  // ── 3. Dispatch to AI Provider (Gemini or OpenAI) ──────────────────────────
+  const provider = getActiveAiProvider();
+  const hasGemini = isGeminiConfigured();
+  const hasOpenAi =
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here";
+
+  if (!hasGemini && !hasOpenAi) {
     return NextResponse.json(
       {
         error:
-          "OpenAI API key not configured. Please add a valid OPENAI_API_KEY to your .env.local file, or try one of the instant built-in examples (Two Sum, Valid Parentheses, Maximum Subarray).",
+          "No AI API key configured. Please add GEMINI_API_KEY (free at https://aistudio.google.com/) or OPENAI_API_KEY to your .env.local file, or practice with the instant built-in examples.",
       },
       { status: 401 }
     );
@@ -128,8 +139,15 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join("\n");
 
-  // ── 5. Call OpenAI with structured output ───────────────────────────────────
+  // ── 5. Generate structured problem ──────────────────────────────────────────
   try {
+    if (provider === "gemini" || (hasGemini && !hasOpenAi)) {
+      const fullProblem = await parseProblemWithGemini(SYSTEM_PROMPT, userMessage);
+      const data = buildSafeProblemResponse(fullProblem);
+      return NextResponse.json(data, { status: 200 });
+    }
+
+    // OpenAI provider
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -164,6 +182,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, { status: 200 });
 
   } catch (error) {
+    // If OpenAI failed with rate limit or quota and Gemini is available, try Gemini
+    if (hasGemini && provider !== "gemini") {
+      try {
+        console.warn("OpenAI failed, attempting Gemini fallback...");
+        const fullProblem = await parseProblemWithGemini(SYSTEM_PROMPT, userMessage);
+        const data = buildSafeProblemResponse(fullProblem);
+        return NextResponse.json(data, { status: 200 });
+      } catch (geminiError) {
+        console.error("Gemini fallback also failed:", geminiError);
+      }
+    }
     if (error instanceof OpenAI.APIError) {
       console.error("OpenAI API error:", error.status, error.message);
 

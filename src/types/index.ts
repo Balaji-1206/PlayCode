@@ -14,7 +14,7 @@ export interface LanguageConfig {
 export interface Example {
   input: string;
   output: string;
-  explanation?: string;
+  explanation?: string | null;
 }
 
 export interface Problem {

@@ -32,22 +32,9 @@ export const TestCaseSchema = z.object({
   expectedOutput: z.string().describe("Exact expected output string"),
   description: z.string().describe("Brief description of what this test case covers"),
   category: z
-    .enum([
-      "normal",
-      "edge_empty",
-      "edge_single",
-      "edge_min",
-      "edge_max",
-      "edge_duplicates",
-      "edge_negative",
-      "edge_sorted",
-      "edge_reverse_sorted",
-      "edge_zeros",
-      "boundary",
-      "large_input",
-      "adversarial",
-    ])
-    .describe("The type of test case for classification"),
+    .string()
+    .default("normal")
+    .describe("The type of test case for classification, e.g. 'normal', 'boundary', 'edge'"),
 });
 
 // ─── Starter code per language ────────────────────────────────────────────────
@@ -118,16 +105,16 @@ export const ParsedProblemSchema = z.object({
   testCases: z.object({
     public: z
       .array(TestCaseSchema)
-      .min(2)
-      .max(3)
-      .describe("2–3 test cases shown to the user (match the examples)"),
+      .min(1)
+      .max(10)
+      .describe("1–10 test cases shown to the user (match the examples)"),
 
     hidden: z
       .array(TestCaseSchema)
-      .min(10)
-      .max(15)
+      .min(3)
+      .max(30)
       .describe(
-        "10–15 hidden test cases covering edge cases. NEVER sent to the browser."
+        "3–30 hidden test cases covering edge cases. NEVER sent to the browser."
       ),
   }),
 

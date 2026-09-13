@@ -43,11 +43,10 @@ export class Judge0Provider implements ExecutionProvider {
 
 // ─── Provider factory ──────────────────────────────────────────────────────────
 
-import type { ExecutionProvider as IExecutionProvider, ExecutionRequest, ExecutionResponse } from "./types";
 import { pistonProvider } from "./pistonProvider";
 import { localProvider } from "./localProvider";
 
-class ResilientExecutionProvider implements IExecutionProvider {
+class ResilientExecutionProvider implements ExecutionProvider {
   readonly name = "Resilient (Piston + Local Fallback)";
 
   async execute(request: ExecutionRequest): Promise<ExecutionResponse> {
@@ -74,7 +73,7 @@ const resilientProvider = new ResilientExecutionProvider();
  * Returns the configured execution provider.
  * Supports: "local", "piston", "auto" (default), or "judge0".
  */
-export function getExecutionProvider(): IExecutionProvider {
+export function getExecutionProvider(): ExecutionProvider {
   const selected = process.env.EXECUTION_PROVIDER ?? "auto";
 
   switch (selected) {
