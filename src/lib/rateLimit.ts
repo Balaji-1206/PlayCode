@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
 // Sliding window rate limiter for Next.js API routes.

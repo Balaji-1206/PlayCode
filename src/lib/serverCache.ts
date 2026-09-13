@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
-import type { TestCase } from "@/lib/schemas/problem";
-import type { InternalLanguageKey } from "@/lib/execution/types";
-import { PROBLEM_CATALOG } from "@/lib/problemCatalog";
+import type { TestCase } from "./schemas/problem";
+import type { InternalLanguageKey } from "./execution/types";
+import { PROBLEM_CATALOG } from "./problemCatalog";
 
 // ─── Server-side cache ────────────────────────────────────────────────────────
 // Stores hidden test cases and driver code server-side so they NEVER reach
