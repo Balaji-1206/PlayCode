@@ -70,7 +70,7 @@ export default function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                   isTimeOptimal ? "text-blue-700 dark:text-blue-400/80" : "text-amber-700 dark:text-amber-400/80"
                 }`}
               >
-                Code's TC
+                Code&apos;s TC
               </span>
               <div
                 className={`mt-1.5 font-mono text-3xl font-black ${
@@ -129,7 +129,7 @@ export default function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                   isSpaceOptimal ? "text-indigo-700 dark:text-indigo-400/80" : "text-amber-700 dark:text-amber-400/80"
                 }`}
               >
-                Code's SC
+                Code&apos;s SC
               </span>
               <div
                 className={`mt-1.5 font-mono text-3xl font-black ${

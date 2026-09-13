@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CheckCircle2, XCircle, AlertTriangle, Zap } from "lucide-react";
 import type { ExecutionResult } from "@/types";
 
@@ -102,20 +101,16 @@ interface VerdictBannerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function VerdictBanner({ result }: VerdictBannerProps) {
-  const [key, setKey] = useState(0);
   const verdict = deriveVerdict(result);
-
-  useEffect(() => {
-    setKey((k) => k + 1);
-  }, [result]);
 
   if (!verdict) return null;
 
   const config = VERDICT_CONFIGS[verdict];
+  const bannerKey = `${result.status}-${result.executionTime}-${result.hiddenSummary?.passed ?? 0}`;
 
   return (
     <div
-      key={key}
+      key={bannerKey}
       className={`flex items-center gap-3 rounded-xl border px-4 py-2.5 shadow-2xs ${config.containerClass} ${config.animationClass}`}
     >
       {config.icon}

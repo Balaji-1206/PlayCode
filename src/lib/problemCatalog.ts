@@ -616,6 +616,297 @@ fn main() {
     timeComplexityHint: "O(n)",
     spaceComplexityHint: "O(n)",
   },
+
+  "reverse-linked-list": {
+    title: "Reverse Linked List",
+    difficulty: "Easy",
+    description: `Given the \`head\` of a singly linked list, reverse the list, and return the reversed list.`,
+    tags: ["Linked List", "Recursion"],
+    constraints: [
+      "The number of nodes in the list is the range [0, 5000].",
+      "-5000 <= Node.val <= 5000",
+    ],
+    inputFormat: "JSON array representing node values.",
+    outputFormat: "JSON array representing reversed node values.",
+    examples: [
+      { input: "[1,2,3,4,5]", output: "[5, 4, 3, 2, 1]", explanation: "1->2->3->4->5 becomes 5->4->3->2->1" },
+      { input: "[1,2]", output: "[2, 1]", explanation: "1->2 becomes 2->1" },
+      { input: "[]", output: "[]", explanation: "Empty list remains empty." },
+    ],
+    functionSignature: {
+      functionName: "reverseList",
+      parameters: [{ name: "head", type: "ListNode", description: "Head of the linked list" }],
+      returnType: "ListNode",
+      returnDescription: "Head of reversed linked list",
+    },
+    starterCode: {
+      python: `def reverse_list(head: ListNode | None) -> ListNode | None:
+    prev = None
+    curr = head
+    while curr:
+        nxt = curr.next
+        curr.next = prev
+        prev = curr
+        curr = nxt
+    return prev
+`,
+      cpp: `class Solution {
+public:
+    ListNode* reverseList(ListNode* head) {
+        ListNode* prev = nullptr;
+        ListNode* curr = head;
+        while (curr != nullptr) {
+            ListNode* nxt = curr->next;
+            curr->next = prev;
+            prev = curr;
+            curr = nxt;
+        }
+        return prev;
+    }
+};`,
+      javascript: `function reverseList(head) {
+    let prev = null;
+    let curr = head;
+    while (curr !== null) {
+        const next = curr.next;
+        curr.next = prev;
+        prev = curr;
+        curr = next;
+    }
+    return prev;
+}`,
+      java: `class Solution {
+    public ListNode reverseList(ListNode head) {
+        ListNode prev = null;
+        ListNode curr = head;
+        while (curr != null) {
+            ListNode next = curr.next;
+            curr.next = prev;
+            prev = curr;
+            curr = next;
+        }
+        return prev;
+    }
+}`,
+      go: `func reverseList(head *ListNode) *ListNode {
+    var prev *ListNode
+    curr := head
+    for curr != nil {
+        next := curr.Next
+        curr.Next = prev
+        prev = curr
+        curr = next
+    }
+    return prev
+}`,
+      rust: `impl Solution {
+    pub fn reverse_list(head: Option<Box<ListNode>>) -> Option<Box<ListNode>> {
+        let mut prev = None;
+        let mut curr = head;
+        while let Some(mut node) = curr {
+            let next = node.next.take();
+            node.next = prev;
+            prev = Some(node);
+            curr = next;
+        }
+        prev
+    }
+}`,
+    },
+    driverCode: {
+      python: `
+import sys, json
+
+if __name__ == "__main__":
+    raw = sys.stdin.read().strip()
+    arr = json.loads(raw) if raw else []
+    head = list_to_linked_list(arr)
+    rev = reverse_list(head)
+    res = linked_list_to_list(rev)
+    print("__PLAYCODE_RESULT_START__")
+    print(json.dumps(res))
+    print("__PLAYCODE_RESULT_END__")
+`,
+      javascript: `
+const fs = require('fs');
+const raw = fs.readFileSync(0, 'utf-8').trim();
+const arr = raw ? JSON.parse(raw) : [];
+
+function toList(arr) {
+  let dummy = new ListNode(0);
+  let curr = dummy;
+  for (const x of arr) {
+    curr.next = new ListNode(x);
+    curr = curr.next;
+  }
+  return dummy.next;
+}
+
+function fromList(head) {
+  const res = [];
+  while (head) {
+    res.push(head.val);
+    head = head.next;
+  }
+  return res;
+}
+
+const head = toList(arr);
+const rev = reverseList(head);
+console.log("__PLAYCODE_RESULT_START__");
+console.log(JSON.stringify(fromList(rev)));
+console.log("__PLAYCODE_RESULT_END__");
+`,
+      cpp: `
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+
+int main() {
+    std::string line;
+    if (std::getline(std::cin, line)) {
+        std::vector<int> nums;
+        std::string cleaned;
+        for (char c : line) {
+            if (c == '[' || c == ']' || c == ',') cleaned += ' ';
+            else cleaned += c;
+        }
+        std::stringstream ss(cleaned);
+        int x;
+        while (ss >> x) nums.push_back(x);
+
+        ListNode dummy(0);
+        ListNode* curr = &dummy;
+        for (int v : nums) {
+            curr->next = new ListNode(v);
+            curr = curr->next;
+        }
+
+        Solution sol;
+        ListNode* rev = sol.reverseList(dummy.next);
+        std::cout << "__PLAYCODE_RESULT_START__\\n[";
+        bool first = true;
+        while (rev) {
+            if (!first) std::cout << ", ";
+            std::cout << rev->val;
+            first = false;
+            rev = rev->next;
+        }
+        std::cout << "]\\n__PLAYCODE_RESULT_END__" << std::endl;
+    }
+    return 0;
+}
+`,
+      java: `
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        if (sc.hasNextLine()) {
+            String line = sc.nextLine().replaceAll("[\\[\\],]", " ").trim();
+            Scanner ns = new Scanner(line);
+            ListNode dummy = new ListNode(0);
+            ListNode curr = dummy;
+            while (ns.hasNextInt()) {
+                curr.next = new ListNode(ns.nextInt());
+                curr = curr.next;
+            }
+            Solution sol = new Solution();
+            ListNode rev = sol.reverseList(dummy.next);
+            List<Integer> res = new ArrayList<>();
+            while (rev != null) {
+                res.add(rev.val);
+                rev = rev.next;
+            }
+            System.out.println("__PLAYCODE_RESULT_START__");
+            System.out.println(res.toString());
+            System.out.println("__PLAYCODE_RESULT_END__");
+        }
+    }
+}
+`,
+      go: `
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() {
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		text := strings.TrimSpace(scanner.Text())
+		var nums []int
+		json.Unmarshal([]byte(text), &nums)
+		dummy := &ListNode{}
+		curr := dummy
+		for _, v := range nums {
+			curr.Next = &ListNode{Val: v}
+			curr = curr.Next
+		}
+		rev := reverseList(dummy.Next)
+		var out []int
+		for rev != nil {
+			out = append(out, rev.Val)
+			rev = rev.Next
+		}
+		bytes, _ := json.Marshal(out)
+		fmt.Println("__PLAYCODE_RESULT_START__")
+		fmt.Println(string(bytes))
+		fmt.Println("__PLAYCODE_RESULT_END__")
+	}
+}
+`,
+      rust: `
+use std::io::{self, BufRead};
+
+fn main() {
+    let stdin = io::stdin();
+    let mut lines = stdin.lock().lines().filter_map(|l| l.ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(l) = lines.next() {
+        let nums: Vec<i32> = l.trim_matches(|c| c == '[' || c == ']').split(',').filter_map(|s| s.trim().parse().ok()).collect();
+        let mut head = None;
+        for &v in nums.iter().rev() {
+            let mut node = Box::new(ListNode::new(v));
+            node.next = head;
+            head = Some(node);
+        }
+        let rev = Solution::reverse_list(head);
+        let mut out = Vec::new();
+        let mut curr = rev;
+        while let Some(node) = curr {
+            out.push(node.val);
+            curr = node.next;
+        }
+        println!("__PLAYCODE_RESULT_START__");
+        println!("{:?}", out);
+        println!("__PLAYCODE_RESULT_END__");
+    }
+}
+`,
+    },
+    testCases: {
+      public: [
+        { input: "[1,2,3,4,5]", expectedOutput: "[5, 4, 3, 2, 1]", description: "5 elements", category: "normal" },
+        { input: "[1,2]", expectedOutput: "[2, 1]", description: "2 elements", category: "normal" },
+        { input: "[]", expectedOutput: "[]", description: "Empty list", category: "boundary" },
+      ],
+      hidden: [
+        { input: "[1]", expectedOutput: "[1]", description: "Single element", category: "boundary" },
+        { input: "[1,1,1,1]", expectedOutput: "[1, 1, 1, 1]", description: "All duplicates", category: "edge_duplicates" },
+        { input: "[-1,-2,-3]", expectedOutput: "[-3, -2, -1]", description: "Negative elements", category: "edge_negative" },
+        { input: "[10,20,30,40,50,60,70,80,90,100]", expectedOutput: "[100, 90, 80, 70, 60, 50, 40, 30, 20, 10]", description: "Larger list", category: "normal" },
+      ],
+    },
+    timeComplexityHint: "O(n)",
+    spaceComplexityHint: "O(1)",
+  },
 };
 
 export function findMatchingCatalogProblem(statement: string, extra = ""): ParsedProblem | null {
@@ -627,6 +918,12 @@ export function findMatchingCatalogProblem(statement: string, extra = ""): Parse
     (combined.includes("open") && combined.includes("close") && combined.includes("valid"))
   ) {
     return PROBLEM_CATALOG["valid-parentheses"];
+  }
+  if (
+    combined.includes("reverse") &&
+    (combined.includes("linked list") || combined.includes("listnode") || combined.includes("head"))
+  ) {
+    return PROBLEM_CATALOG["reverse-linked-list"];
   }
   if (
     combined.includes("subarray") &&

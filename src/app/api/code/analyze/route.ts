@@ -16,6 +16,7 @@ import {
   getCachedAnalysis,
   setCachedAnalysis,
 } from "@/lib/ai/aiCache";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 // ─── OpenAI client ────────────────────────────────────────────────────────────
 
@@ -62,6 +63,14 @@ CRITICAL: Do NOT hallucinate complexity or issues. If you are uncertain, say "ap
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // ── Rate limit check ────────────────────────────────────────────────────────
+  const rateLimit = await checkRateLimit(request, "analyze");
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many analysis requests. Please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.reset) } }
+    );
+  }
   // ── 1. Validate request ─────────────────────────────────────────────────────
   let body: unknown;
   try {

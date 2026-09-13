@@ -1,22 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Sun, Moon } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 
 export default function ThemeToggle() {
   const { theme, toggleTheme, setTheme } = usePlaygroundStore();
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     try {
       const stored = localStorage.getItem("dsa-theme");
       if (stored === "dark" || stored === "light") {
         setTheme(stored);
-      } else {
-        // Default to light as required by Breeze theme
-        setTheme("light");
       }
     } catch {}
   }, [setTheme]);

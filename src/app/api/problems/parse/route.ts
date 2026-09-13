@@ -7,6 +7,7 @@ import {
   type ParsedProblem,
 } from "@/lib/schemas/problem";
 import { storeProblemSession } from "@/lib/serverCache";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { findMatchingCatalogProblem } from "@/lib/problemCatalog";
 import {
   getActiveAiProvider,
@@ -17,8 +18,8 @@ import type { InternalLanguageKey } from "@/lib/execution/types";
 
 // ─── Helper to build client-safe problem with server-cached hidden tests ──────
 
-function buildSafeProblemResponse(fullProblem: ParsedProblem) {
-  const problemSessionId = storeProblemSession(
+async function buildSafeProblemResponse(fullProblem: ParsedProblem) {
+  const problemSessionId = await storeProblemSession(
     fullProblem.testCases.hidden,
     fullProblem.driverCode as Record<InternalLanguageKey, string>
   );
@@ -67,7 +68,11 @@ RULES:
    - Read input from stdin
    - Parse it correctly for the given function signature
    - Call the user's function
-   - Print the result to stdout in the EXACT format that matches expectedOutput
+   - Print the result to stdout enclosed in delimiters:
+     print("__PLAYCODE_RESULT_START__")
+     print(result)
+     print("__PLAYCODE_RESULT_END__")
+     (This ensures user debug print() statements do not break grading)
 6. Starter code must contain ONLY the function/class definition with a placeholder body (e.g., return [] or pass or return null).
 7. Driver code must NOT contain the function implementation — only the parsing, calling, and printing logic.
 8. Test case inputs must be in the EXACT format that the driver code expects to read from stdin.
@@ -81,6 +86,15 @@ They are only used server-side for grading. Generate them to be challenging and 
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // ── Rate limit check ────────────────────────────────────────────────────────
+  const rateLimit = await checkRateLimit(request, "parse");
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many problem parsing requests. Please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.reset) } }
+    );
+  }
+
   // ── 1. Parse and validate the request body ──────────────────────────────────
   let body: unknown;
   try {
@@ -108,7 +122,7 @@ export async function POST(request: NextRequest) {
     `${examples ?? ""} ${constraints ?? ""}`
   );
   if (catalogMatch) {
-    const data = buildSafeProblemResponse(catalogMatch);
+    const data = await buildSafeProblemResponse(catalogMatch);
     return NextResponse.json(data, { status: 200 });
   }
 
@@ -143,7 +157,7 @@ export async function POST(request: NextRequest) {
   try {
     if (provider === "gemini" || (hasGemini && !hasOpenAi)) {
       const fullProblem = await parseProblemWithGemini(SYSTEM_PROMPT, userMessage);
-      const data = buildSafeProblemResponse(fullProblem);
+      const data = await buildSafeProblemResponse(fullProblem);
       return NextResponse.json(data, { status: 200 });
     }
 
@@ -178,7 +192,7 @@ export async function POST(request: NextRequest) {
     }
 
     const fullProblem: ParsedProblem = validation.data;
-    const data = buildSafeProblemResponse(fullProblem);
+    const data = await buildSafeProblemResponse(fullProblem);
     return NextResponse.json(data, { status: 200 });
 
   } catch (error) {
@@ -187,7 +201,7 @@ export async function POST(request: NextRequest) {
       try {
         console.warn("OpenAI failed, attempting Gemini fallback...");
         const fullProblem = await parseProblemWithGemini(SYSTEM_PROMPT, userMessage);
-        const data = buildSafeProblemResponse(fullProblem);
+        const data = await buildSafeProblemResponse(fullProblem);
         return NextResponse.json(data, { status: 200 });
       } catch (geminiError) {
         console.error("Gemini fallback also failed:", geminiError);

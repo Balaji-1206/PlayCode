@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getExecutionProvider } from "@/lib/execution/judge0Provider";
-import { getProblemSession, SAMPLE_TWO_SUM_SESSION } from "@/lib/serverCache";
+import { getExecutionProvider } from "@/lib/execution";
+import { getProblemSession, SAMPLE_TWO_SUM_SESSION, type CachedProblemSession } from "@/lib/serverCache";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { getInjectedDsaDefinitions } from "@/lib/dsa";
 import type { InternalLanguageKey } from "@/lib/execution/types";
 
 // ─── Request schema ───────────────────────────────────────────────────────────
@@ -86,9 +88,60 @@ function safeTruncate(value: string, maxLen = 120): string {
   return normalized.slice(0, maxLen) + "…";
 }
 
+// ─── Delimiter constants for separating user stdout from official return value ─
+export const RESULT_START_DELIMITER = "__PLAYCODE_RESULT_START__";
+export const RESULT_END_DELIMITER = "__PLAYCODE_RESULT_END__";
+
+export function extractOutputAndLogs(rawStdout: string, expectedOutput?: string): {
+  officialOutput: string;
+  userLogs: string;
+} {
+  const startIndex = rawStdout.indexOf(RESULT_START_DELIMITER);
+  if (startIndex !== -1) {
+    const endIndex = rawStdout.indexOf(RESULT_END_DELIMITER, startIndex + RESULT_START_DELIMITER.length);
+    const userLogs = (
+      rawStdout.substring(0, startIndex) +
+      (endIndex !== -1 ? rawStdout.substring(endIndex + RESULT_END_DELIMITER.length) : "")
+    ).trim();
+
+    const officialOutput = endIndex !== -1
+      ? rawStdout.substring(startIndex + RESULT_START_DELIMITER.length, endIndex).trim()
+      : rawStdout.substring(startIndex + RESULT_START_DELIMITER.length).trim();
+
+    return { officialOutput, userLogs };
+  }
+
+  // Fallback for drivers without explicit delimiters:
+  // If user included print("debug") on line 1, and official output is on the last line matching expectedOutput:
+  const lines = rawStdout.trim().split("\n");
+  if (lines.length > 1 && expectedOutput) {
+    const lastLine = lines[lines.length - 1].trim();
+    if (outputsMatch(lastLine, expectedOutput)) {
+      return {
+        officialOutput: lastLine,
+        userLogs: lines.slice(0, -1).join("\n").trim(),
+      };
+    }
+  }
+
+  return {
+    officialOutput: rawStdout.trim(),
+    userLogs: "",
+  };
+}
+
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // ── Rate limit check (15 requests/min) ──────────────────────────────────────
+  const rateLimit = await checkRateLimit(request, "execute");
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many execution requests. Please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.reset) } }
+    );
+  }
+
   // ── 1. Validate request ────────────────────────────────────────────────────
   let body: unknown;
   try {
@@ -109,8 +162,20 @@ export async function POST(request: NextRequest) {
   const provider = getExecutionProvider();
 
   // ── 2. Resolve test cases and driver code ──────────────────────────────────
-  let session = problemSessionId ? getProblemSession(problemSessionId) : null;
-  if (!session) {
+  let session: CachedProblemSession | null = null;
+  if (problemSessionId) {
+    session = await getProblemSession(problemSessionId);
+    if (!session) {
+      return NextResponse.json(
+        {
+          error: "Problem session expired or invalid. Please re-parse the problem to generate fresh drivers.",
+          code: "SESSION_EXPIRED",
+        },
+        { status: 410 }
+      );
+    }
+  } else {
+    // Default session for initial interactive demo before any problem is parsed
     session = SAMPLE_TWO_SUM_SESSION;
   }
 
@@ -148,10 +213,12 @@ export async function POST(request: NextRequest) {
   }
 
 // ─── Code preparation helper ──────────────────────────────────────────────────
-// Ensures essential standard library headers/imports are included at the top
-// for C++ and Java so classes like vector, string, stack compile properly.
+// Ensures essential standard library headers/imports and standard DSA structures
+// (ListNode, TreeNode) are included so problems compile and execute smoothly.
 
 function prepareCombinedCode(code: string, driverCode: string, language: string): string {
+  const dsaDefs = getInjectedDsaDefinitions(code, driverCode, language);
+
   if (language === "cpp") {
     const headers = `#include <iostream>
 #include <vector>
@@ -169,7 +236,8 @@ using namespace std;
     const userCodeWithHeaders = code.includes("<iostream>") || code.includes("<vector>")
       ? code
       : `${headers}\n${code}`;
-    return driverCode ? `${userCodeWithHeaders}\n\n${driverCode}` : userCodeWithHeaders;
+    const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithHeaders}` : userCodeWithHeaders;
+    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
   }
 
   if (language === "java") {
@@ -177,10 +245,12 @@ using namespace std;
 import java.io.*;
 `;
     const userCodeWithImports = code.includes("import ") ? code : `${imports}\n${code}`;
-    return driverCode ? `${userCodeWithImports}\n\n${driverCode}` : userCodeWithImports;
+    const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithImports}` : userCodeWithImports;
+    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : userCodeWithImports;
   }
 
-  return driverCode ? `${code}\n\n${driverCode}` : code;
+  const codeWithDefs = dsaDefs ? `${dsaDefs}\n${code}` : code;
+  return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
 }
 
   // ── 4. Combine user code with driver code ─────────────────────────────────
@@ -193,6 +263,7 @@ import java.io.*;
     input: string;            // visible to user
     expected: string;         // visible to user
     received: string;         // visible to user
+    userLogs?: string;
     executionTime: number;
     stderr: string;
   }> = [];
@@ -200,6 +271,7 @@ import java.io.*;
   let hasCompileError = false;
   let compileErrorMessage = "";
   let totalExecutionTime = 0;
+  let publicTimeouts = 0;
 
   for (let i = 0; i < publicTests.length; i++) {
     const tc = publicTests[i];
@@ -233,17 +305,30 @@ import java.io.*;
         break;
       }
 
-      const passed = result.exitCode === 0 && outputsMatch(result.stdout, tc.expectedOutput);
+      if (result.timedOut) {
+        publicTimeouts++;
+      } else {
+        publicTimeouts = 0;
+      }
+
+      const { officialOutput, userLogs } = extractOutputAndLogs(result.stdout, tc.expectedOutput);
+      const passed = result.exitCode === 0 && outputsMatch(officialOutput, tc.expectedOutput);
 
       publicResults.push({
         caseIndex: i,
         status: result.timedOut ? "error" : passed ? "pass" : "fail",
         input: tc.input,
         expected: tc.expectedOutput,
-        received: result.timedOut ? "Time Limit Exceeded" : safeTruncate(result.stdout, 200),
+        received: result.timedOut ? "Time Limit Exceeded" : safeTruncate(officialOutput, 200),
+        userLogs: userLogs ? safeTruncate(userLogs, 500) : undefined,
         executionTime: result.executionTime,
         stderr: result.stderr,
       });
+
+      // Fail-fast if 2 consecutive test cases hit TLE
+      if (publicTimeouts >= 2) {
+        break;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Execution provider error";
       publicResults.push({
@@ -258,7 +343,7 @@ import java.io.*;
     }
   }
 
-  // ── 6. Execute against hidden tests (submit only) ──────────────────────────
+  // ── 6. Execute against hidden tests (submit only) with concurrency & fail-fast ──
   let hiddenSummary: { total: number; passed: number } | null = null;
   let failedHiddenCase: {
     caseIndex: number;
@@ -272,48 +357,73 @@ import java.io.*;
 
   if (runType === "submit" && hiddenTests.length > 0 && !hasCompileError) {
     let hiddenPassed = 0;
+    const BATCH_SIZE = 3;
+    let consecutiveTimeouts = 0;
+    let abortRemaining = false;
 
-    for (let i = 0; i < hiddenTests.length; i++) {
-      const tc = hiddenTests[i];
-      try {
-        const result = await provider.execute({
-          code: combinedCode,
-          language,
-          stdin: tc.input,
-          timeoutMs: 5000,
-        });
+    for (let b = 0; b < hiddenTests.length; b += BATCH_SIZE) {
+      if (abortRemaining) break;
+      const batch = hiddenTests.slice(b, b + BATCH_SIZE);
 
-        totalExecutionTime += result.executionTime;
+      const batchResults = await Promise.all(
+        batch.map(async (tc, idx) => {
+          const actualIndex = b + idx;
+          try {
+            const result = await provider.execute({
+              code: combinedCode,
+              language,
+              stdin: tc.input,
+              timeoutMs: 5000,
+            });
+            return { tc, index: actualIndex, result, error: null };
+          } catch (err) {
+            return { tc, index: actualIndex, result: null, error: err };
+          }
+        })
+      );
 
-        const isMatch = result.exitCode === 0 && outputsMatch(result.stdout, tc.expectedOutput);
-        if (isMatch) {
-          hiddenPassed++;
-        } else {
-          // If this is the first failed hidden test case, capture it for user inspection
+      for (const item of batchResults) {
+        if (!item.result) {
           if (!failedHiddenCase) {
             failedHiddenCase = {
-              caseIndex: i + 1,
-              input: tc.input,
-              expected: tc.expectedOutput,
-              received: result.timedOut
-                ? "Time Limit Exceeded"
-                : safeTruncate(result.stdout, 200),
-              executionTime: result.executionTime,
-              stderr: result.stderr,
-              description: tc.description,
+              caseIndex: item.index + 1,
+              input: item.tc.input,
+              expected: item.tc.expectedOutput,
+              received: "Execution Error",
+              executionTime: 0,
+              stderr: item.error instanceof Error ? item.error.message : "Execution failed",
+              description: item.tc.description,
             };
           }
+          continue;
         }
-      } catch (err) {
-        // Provider-level error: count as failed
-        if (!failedHiddenCase) {
+
+        const { result, tc, index } = item;
+        totalExecutionTime += result.executionTime;
+
+        if (result.timedOut) {
+          consecutiveTimeouts++;
+          if (consecutiveTimeouts >= 2) {
+            abortRemaining = true;
+          }
+        } else {
+          consecutiveTimeouts = 0;
+        }
+
+        const { officialOutput } = extractOutputAndLogs(result.stdout, tc.expectedOutput);
+        const isMatch = result.exitCode === 0 && outputsMatch(officialOutput, tc.expectedOutput);
+        if (isMatch) {
+          hiddenPassed++;
+        } else if (!failedHiddenCase) {
           failedHiddenCase = {
-            caseIndex: i + 1,
+            caseIndex: index + 1,
             input: tc.input,
             expected: tc.expectedOutput,
-            received: "Execution Error",
-            executionTime: 0,
-            stderr: err instanceof Error ? err.message : "Execution failed",
+            received: result.timedOut
+              ? "Time Limit Exceeded"
+              : safeTruncate(officialOutput, 200),
+            executionTime: result.executionTime,
+            stderr: result.stderr,
             description: tc.description,
           };
         }

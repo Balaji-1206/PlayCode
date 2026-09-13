@@ -4,7 +4,8 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import type { LanguageKey } from "@/types";
 import { LANGUAGES } from "@/lib/languages";
-import { usePlaygroundStore } from "@/stores/playgroundStore";
+import { usePlaygroundStore, setGlobalEditorInstance } from "@/stores/playgroundStore";
+import { useEffect } from "react";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,14 @@ export default function CodeEditor({ language, value, onChange, fontSize = 14 }:
     fontSize,
   };
 
+  useEffect(() => {
+    return () => {
+      setGlobalEditorInstance(null);
+    };
+  }, []);
+
   const handleMount: OnMount = (editor) => {
+    setGlobalEditorInstance(editor);
     editor.focus();
   };
 

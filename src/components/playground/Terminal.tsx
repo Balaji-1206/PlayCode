@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -87,6 +87,15 @@ function TestCaseDetail({ result }: { result: TestResult }) {
             Output
           </p>
           <pre className="whitespace-pre-wrap text-emerald-700 dark:text-emerald-300 font-semibold">{result.received || result.expected}</pre>
+        </div>
+      )}
+
+      {result.userLogs && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-[#0B1120] p-3 shadow-2xs">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+            Console Logs (stdout)
+          </p>
+          <pre className="whitespace-pre-wrap font-mono text-xs text-slate-700 dark:text-slate-300">{result.userLogs}</pre>
         </div>
       )}
     </div>
@@ -237,34 +246,122 @@ function HiddenTestSummary({
   );
 }
 
+// ─── Custom test case panel ──────────────────────────────────────────────────
+
+function CustomTestCasePanel({
+  input,
+  onInputChange,
+  expected,
+  onExpectedChange,
+  customResult,
+}: {
+  input: string;
+  onInputChange: (val: string) => void;
+  expected: string;
+  onExpectedChange: (val: string) => void;
+  customResult?: TestResult | null;
+}) {
+  return (
+    <div className="space-y-3 text-xs font-mono">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F1F6FA] dark:bg-[#111827] p-3 shadow-2xs">
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Custom Test Input (stdin)
+        </label>
+        <textarea
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          placeholder="Enter custom input (e.g. [2,7,11,15]\n9)"
+          rows={3}
+          className="w-full resize-y rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:outline-hidden"
+        />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F1F6FA] dark:bg-[#111827] p-3 shadow-2xs">
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Expected Output (Optional)
+        </label>
+        <textarea
+          value={expected}
+          onChange={(e) => onExpectedChange(e.target.value)}
+          placeholder="Optional expected output (e.g. [0, 1])"
+          rows={2}
+          className="w-full resize-y rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:outline-hidden"
+        />
+      </div>
+
+      <div className="rounded-lg bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 p-2.5 text-[11px] text-blue-700 dark:text-blue-300 font-sans">
+        💡 Your custom input will be tested when you press <strong>Run (Ctrl+Enter)</strong>.
+      </div>
+
+      {customResult && (
+        <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+            Execution Result for Custom Test
+          </p>
+          <TestCaseDetail result={customResult} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Terminal ─────────────────────────────────────────────────────────────────
 
 export default function Terminal() {
-  const { output, isRunning, isSubmitting } = usePlaygroundStore();
+  const {
+    output,
+    isRunning,
+    isSubmitting,
+    customInput,
+    setCustomInput,
+    customExpected,
+    setCustomExpected,
+    isCustomTestActive,
+    setIsCustomTestActive,
+  } = usePlaygroundStore();
   const [selectedCase, setSelectedCase] = useState(0);
+  const [prevOutput, setPrevOutput] = useState(output);
+
+  if (output !== prevOutput) {
+    setPrevOutput(output);
+    setSelectedCase(0);
+  }
 
   const isBusy = isRunning || isSubmitting;
 
-  useEffect(() => {
-    if (output?.testResults.length) {
-      setSelectedCase(0);
-    }
-  }, [output]);
-
   const hasResults = !!output?.testResults.length;
-  const activeResult = output?.testResults[selectedCase];
+  // If user entered a custom test case, the last result might be the custom test case
+  const isLastCaseCustom =
+    hasResults &&
+    customInput.trim().length > 0 &&
+    output!.testResults[output!.testResults.length - 1]?.input.trim() === customInput.trim();
+
+  const standardResults = isLastCaseCustom
+    ? output!.testResults.slice(0, -1)
+    : (output?.testResults ?? []);
+
+  const customResult = isLastCaseCustom
+    ? output!.testResults[output!.testResults.length - 1]
+    : null;
+
+  const activeResult = standardResults[selectedCase];
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-[#111827] text-slate-700 dark:text-slate-300 transition-colors text-sm">
-      {/* ── Header: test case tabs or idle label ── */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 dark:border-[#263244] bg-[#F8FAFC] dark:bg-[#172033] px-3 py-1.5">
-        {hasResults ? (
-          <TestCaseTabs
-            results={output!.testResults}
-            selectedIndex={selectedCase}
-            onSelect={setSelectedCase}
-          />
-        ) : (
+      {/* ── Header: test case tabs + Custom Test ── */}
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 dark:border-[#263244] bg-[#F8FAFC] dark:bg-[#172033] px-3 py-1.5">
+        <TestCaseTabs
+          results={standardResults}
+          selectedIndex={selectedCase}
+          onSelect={(idx) => {
+            setIsCustomTestActive(false);
+            setSelectedCase(idx);
+          }}
+          showCustomTab={true}
+          isCustomActive={isCustomTestActive}
+          onSelectCustom={() => setIsCustomTestActive(true)}
+        />
+        {!hasResults && !isCustomTestActive && (
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             Output
           </span>
@@ -283,8 +380,19 @@ export default function Terminal() {
           </div>
         )}
 
+        {/* Custom Test Editor */}
+        {!isBusy && isCustomTestActive && (
+          <CustomTestCasePanel
+            input={customInput}
+            onInputChange={setCustomInput}
+            expected={customExpected}
+            onExpectedChange={setCustomExpected}
+            customResult={customResult}
+          />
+        )}
+
         {/* Idle hint */}
-        {!isBusy && !output && (
+        {!isBusy && !output && !isCustomTestActive && (
           <div className="flex flex-col items-center justify-center h-full text-center py-6 text-slate-400 dark:text-slate-500">
             <p className="text-xs">
               Run your solution to see output and test case evaluation here.
@@ -304,7 +412,7 @@ export default function Terminal() {
         )}
 
         {/* Results */}
-        {!isBusy && output && (
+        {!isBusy && output && !isCustomTestActive && (
           <div className="space-y-3">
             {output.hiddenSummary && (
               <VerdictBanner result={output} />

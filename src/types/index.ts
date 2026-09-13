@@ -37,6 +37,7 @@ export interface TestResult {
   input: string;
   expected: string;
   received: string;
+  userLogs?: string;
   executionTime?: number;
 }
 
@@ -77,10 +78,15 @@ export type ViewMode = "parser" | "playground";
 export interface PlaygroundState {
   selectedLanguage: LanguageKey;
   code: string;
+  codeByLanguage: Record<LanguageKey, string>;
+  isDraftSaved: boolean;
   activeTestCase: number;
   output: ExecutionResult | null;
   isRunning: boolean;
   isSubmitting: boolean;
+  customInput: string;
+  customExpected: string;
+  isCustomTestActive: boolean;
   // Step 2 additions
   viewMode: ViewMode;
   isParsing: boolean;

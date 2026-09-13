@@ -11,12 +11,9 @@ import {
   ClipboardPaste,
   Trash2,
   Wand2,
-  Zap,
   Play,
   Flame,
-  Layers,
   Check,
-  ExternalLink,
 } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import ThemeToggle from "@/components/ui/ThemeToggle";
@@ -142,10 +139,7 @@ export default function ProblemParser() {
 
   // Cycle progress steps while parsing
   useEffect(() => {
-    if (!isParsing) {
-      setParseStepIndex(0);
-      return;
-    }
+    if (!isParsing) return;
     const interval = setInterval(() => {
       setParseStepIndex((prev) => (prev + 1) % PARSE_STEPS.length);
     }, 2800);
@@ -245,6 +239,7 @@ export default function ProblemParser() {
     if (!isFormValid || isParsing) return;
 
     setIsParsing(true);
+    setParseStepIndex(0);
     setParseError(null);
 
     try {

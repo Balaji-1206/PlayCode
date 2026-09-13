@@ -8,6 +8,9 @@ interface TestCaseTabsProps {
   results: TestResult[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  showCustomTab?: boolean;
+  isCustomActive?: boolean;
+  onSelectCustom?: () => void;
 }
 
 // ─── Status dot ───────────────────────────────────────────────────────────────
@@ -32,13 +35,14 @@ export default function TestCaseTabs({
   results,
   selectedIndex,
   onSelect,
+  showCustomTab = true,
+  isCustomActive = false,
+  onSelectCustom,
 }: TestCaseTabsProps) {
-  if (results.length === 0) return null;
-
   return (
     <div className="flex items-center gap-1 overflow-x-auto">
       {results.map((result) => {
-        const isActive = result.caseIndex === selectedIndex;
+        const isActive = !isCustomActive && result.caseIndex === selectedIndex;
         return (
           <button
             key={result.caseIndex}
@@ -58,6 +62,24 @@ export default function TestCaseTabs({
           </button>
         );
       })}
+
+      {showCustomTab && onSelectCustom && (
+        <button
+          onClick={onSelectCustom}
+          className={`
+            inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5
+            text-xs font-semibold transition-colors cursor-pointer border
+            ${
+              isCustomActive
+                ? "border-blue-300 dark:border-blue-600/40 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-bold"
+                : "border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:border-slate-400 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800"
+            }
+          `}
+        >
+          <span>+</span>
+          <span>Custom</span>
+        </button>
+      )}
     </div>
   );
 }

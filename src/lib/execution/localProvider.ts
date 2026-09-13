@@ -167,20 +167,34 @@ export class LocalProvider implements ExecutionProvider {
       let timedOut = false;
       const procStart = Date.now();
 
+      // Build a minimal, sanitized environment for local execution.
+      // NEVER leak API keys (GEMINI_API_KEY, OPENAI_API_KEY) or host secrets.
+      const sanitizedEnv: NodeJS.ProcessEnv = {
+        PATH: process.env.CXX_COMPILER_PATH
+          ? `${process.env.CXX_COMPILER_PATH};${process.env.PATH ?? ""}`
+          : process.env.PATH ?? "",
+        SYSTEMROOT: process.env.SYSTEMROOT ?? "",
+        WINDIR: process.env.WINDIR ?? "",
+        TEMP: cwd,
+        TMP: cwd,
+        NODE_ENV: "development",
+      };
+
       const child = spawn(cmd, args, {
         cwd,
         windowsHide: true,
-        env: {
-          ...process.env,
-          PATH: `C:\\msys64\\ucrt64\\bin;${process.env.PATH ?? ""}`,
-        },
-        stdio: ["pipe", "pipe", "pipe"],
+        env: sanitizedEnv,
+        stdio: "pipe",
       });
 
       const timer = setTimeout(() => {
         timedOut = true;
         try {
-          child.kill();
+          if (process.platform === "win32" && child.pid) {
+            spawn("taskkill", ["/pid", child.pid.toString(), "/T", "/F"], { windowsHide: true });
+          } else {
+            child.kill("SIGKILL");
+          }
         } catch {
           // ignore
         }

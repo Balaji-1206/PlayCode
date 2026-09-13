@@ -1,16 +1,15 @@
 import { randomUUID } from "crypto";
 import type { TestCase } from "@/lib/schemas/problem";
 import type { InternalLanguageKey } from "@/lib/execution/types";
+import { PROBLEM_CATALOG } from "@/lib/problemCatalog";
 
 // ─── Server-side cache ────────────────────────────────────────────────────────
 // Stores hidden test cases and driver code server-side so they NEVER reach
 // the browser. Keyed by a random UUID (problemSessionId) generated at parse time.
 //
-// ⚠ This is an in-memory Map — it resets when the Next.js process restarts.
-// In production (Step 5+), replace with Redis or a database table.
-//
-// The Map is declared at module scope, outside of any request handler.
-// Next.js keeps modules in memory across requests in the same process.
+// Supports Upstash Redis REST API when configured (UPSTASH_REDIS_REST_URL &
+// UPSTASH_REDIS_REST_TOKEN) for production serverless persistence across instances.
+// Falls back gracefully to an in-memory Map for local development and offline use.
 
 export interface CachedProblemSession {
   hiddenTestCases: TestCase[];
@@ -32,7 +31,9 @@ if __name__ == "__main__":
             nums = json.loads(lines[0])
             target = int(lines[1])
             res = two_sum(nums, target)
+            print("__PLAYCODE_RESULT_START__")
             print(json.dumps(res))
+            print("__PLAYCODE_RESULT_END__")
 `,
     javascript: `
 const fs = require('fs');
@@ -43,7 +44,9 @@ if (input) {
     const nums = JSON.parse(lines[0]);
     const target = parseInt(lines[1], 10);
     const res = twoSum(nums, target);
+    console.log("__PLAYCODE_RESULT_START__");
     console.log(JSON.stringify(res));
+    console.log("__PLAYCODE_RESULT_END__");
   }
 }
 `,
@@ -68,7 +71,7 @@ int main() {
         int target = std::stoi(l2);
         Solution sol;
         std::vector<int> res = sol.twoSum(nums, target);
-        std::cout << "[" << (res.size() > 0 ? res[0] : 0) << ", " << (res.size() > 1 ? res[1] : 0) << "]" << std::endl;
+        std::cout << "__PLAYCODE_RESULT_START__\\n[" << (res.size() > 0 ? res[0] : 0) << ", " << (res.size() > 1 ? res[1] : 0) << "]\\n__PLAYCODE_RESULT_END__" << std::endl;
     }
     return 0;
 }
@@ -89,7 +92,9 @@ public class Main {
                 int[] nums = list.stream().mapToInt(i -> i).toArray();
                 Solution sol = new Solution();
                 int[] res = sol.twoSum(nums, target);
+                System.out.println("__PLAYCODE_RESULT_START__");
                 System.out.println(Arrays.toString(res));
+                System.out.println("__PLAYCODE_RESULT_END__");
             }
         }
     }
@@ -122,7 +127,9 @@ func main() {
 		target, _ := strconv.Atoi(lines[1])
 		res := twoSum(nums, target)
 		out, _ := json.Marshal(res)
+		fmt.Println("__PLAYCODE_RESULT_START__")
 		fmt.Println(string(out))
+		fmt.Println("__PLAYCODE_RESULT_END__")
 	}
 }
 `,
@@ -136,7 +143,9 @@ fn main() {
         let nums: Vec<i32> = l1.trim_matches(|c| c == '[' || c == ']').split(',').filter_map(|s| s.trim().parse().ok()).collect();
         let target: i32 = l2.parse().unwrap_or(0);
         let res = Solution::two_sum(nums, target);
+        println!("__PLAYCODE_RESULT_START__");
         println!("{:?}", res);
+        println!("__PLAYCODE_RESULT_END__");
     }
 }
 `,
@@ -179,6 +188,15 @@ const problemSessionCache = new Map<string, CachedProblemSession>();
 
 // Evict sessions older than 2 hours to prevent unbounded memory growth.
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+const SESSION_TTL_SECONDS = 7200;
+
+function isUpstashConfigured(): boolean {
+  return Boolean(
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN &&
+    process.env.UPSTASH_REDIS_REST_URL.startsWith("http")
+  );
+}
 
 function evictExpiredSessions(): void {
   const now = Date.now();
@@ -195,18 +213,39 @@ function evictExpiredSessions(): void {
  * Store a problem session's hidden tests and driver code.
  * Returns the session ID to send to the browser.
  */
-export function storeProblemSession(
+export async function storeProblemSession(
   hiddenTestCases: TestCase[],
   driverCode: Record<InternalLanguageKey, string>
-): string {
-  evictExpiredSessions();
-
+): Promise<string> {
   const sessionId = randomUUID();
-  problemSessionCache.set(sessionId, {
+  const session: CachedProblemSession = {
     hiddenTestCases,
     driverCode,
     createdAt: Date.now(),
-  });
+  };
+
+  // Upstash Redis storage if configured
+  if (isUpstashConfigured()) {
+    try {
+      const url = `${process.env.UPSTASH_REDIS_REST_URL}/set/session:${sessionId}?ex=${SESSION_TTL_SECONDS}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(session),
+      });
+      if (!res.ok) {
+        console.warn("Upstash Redis store returned non-OK, stored in-memory fallback:", res.statusText);
+      }
+    } catch (err) {
+      console.warn("Upstash Redis connection error, stored in-memory fallback:", err);
+    }
+  }
+
+  evictExpiredSessions();
+  problemSessionCache.set(sessionId, session);
 
   return sessionId;
 }
@@ -215,7 +254,44 @@ export function storeProblemSession(
  * Retrieve a problem session by ID.
  * Returns null if not found or expired.
  */
-export function getProblemSession(sessionId: string): CachedProblemSession | null {
+export async function getProblemSession(sessionId: string): Promise<CachedProblemSession | null> {
+  if (!sessionId) return null;
+
+  // 0. Built-in Catalog Problem lookup
+  if (PROBLEM_CATALOG[sessionId]) {
+    const p = PROBLEM_CATALOG[sessionId];
+    return {
+      hiddenTestCases: p.testCases.hidden,
+      driverCode: p.driverCode as Record<InternalLanguageKey, string>,
+      createdAt: Date.now(),
+    };
+  }
+
+  // 1. Try Upstash Redis if configured
+  if (isUpstashConfigured()) {
+    try {
+      const url = `${process.env.UPSTASH_REDIS_REST_URL}/get/session:${sessionId}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
+        },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { result: string | CachedProblemSession | null };
+        if (data.result) {
+          const session =
+            typeof data.result === "string"
+              ? (JSON.parse(data.result) as CachedProblemSession)
+              : data.result;
+          return session;
+        }
+      }
+    } catch (err) {
+      console.warn("Upstash Redis get error, checking in-memory fallback:", err);
+    }
+  }
+
+  // 2. Fall back to in-memory cache
   const session = problemSessionCache.get(sessionId);
   if (!session) return null;
 

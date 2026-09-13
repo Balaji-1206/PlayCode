@@ -112,7 +112,7 @@ export default function BottomPanel({ onAnalyze }: BottomPanelProps) {
               On-Demand Algorithmic Complexity Check
             </h3>
             <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Instantly compare your code's Time & Space Complexity (TC & SC) against the expected theoretical targets.
+              Instantly compare your code&apos;s Time & Space Complexity (TC & SC) against the expected theoretical targets.
             </p>
             {onAnalyze && (
               <button

@@ -1,6 +1,5 @@
 import type {
   ExecutionProvider,
-  ExecutionRequest,
   ExecutionResponse,
 } from "./types";
 
@@ -30,74 +29,10 @@ export class Judge0Provider implements ExecutionProvider {
     this.apiKey = apiKey;
   }
 
-  async execute(_request: ExecutionRequest): Promise<ExecutionResponse> {
-    // TODO (Step 3 extension): Implement Judge0 submission + polling.
-    // Judge0 is async — you submit a job, then poll for the result.
-    // This is intentionally left as a stub until you want to activate it.
+  async execute(): Promise<ExecutionResponse> {
+    // Judge0 is async — submit job and poll for result.
     throw new Error(
-      "Judge0Provider is not yet implemented. " +
-        "Set EXECUTION_PROVIDER=piston in .env.local to use Piston instead."
+      `Judge0Provider (${this.apiUrl}) is not yet active. Set EXECUTION_PROVIDER=piston in .env.local to use Piston.`
     );
-  }
-}
-
-// ─── Provider factory ──────────────────────────────────────────────────────────
-
-import { pistonProvider } from "./pistonProvider";
-import { localProvider } from "./localProvider";
-
-class ResilientExecutionProvider implements ExecutionProvider {
-  readonly name = "Resilient (Piston + Local Fallback)";
-
-  async execute(request: ExecutionRequest): Promise<ExecutionResponse> {
-    try {
-      const response = await pistonProvider.execute(request);
-      if (
-        response.stderr.includes("whitelist only") ||
-        response.stderr.includes("Piston API error 401") ||
-        response.stderr.includes("Piston error")
-      ) {
-        return await localProvider.execute(request);
-      }
-      return response;
-    } catch {
-      // Automatic fallback to local provider on network or Piston error
-      return await localProvider.execute(request);
-    }
-  }
-}
-
-const resilientProvider = new ResilientExecutionProvider();
-
-/**
- * Returns the configured execution provider.
- * Supports: "local", "piston", "auto" (default), or "judge0".
- */
-export function getExecutionProvider(): ExecutionProvider {
-  const selected = process.env.EXECUTION_PROVIDER ?? "auto";
-
-  switch (selected) {
-    case "local":
-      return localProvider;
-
-    case "auto":
-    case "piston":
-      return resilientProvider;
-
-    case "judge0": {
-      const apiKey = process.env.JUDGE0_API_KEY;
-      const apiUrl =
-        process.env.JUDGE0_API_URL ??
-        "https://judge0-ce.p.rapidapi.com";
-      if (!apiKey) {
-        throw new Error(
-          "EXECUTION_PROVIDER=judge0 requires JUDGE0_API_KEY in .env.local"
-        );
-      }
-      return new Judge0Provider(apiUrl, apiKey);
-    }
-
-    default:
-      return resilientProvider;
   }
 }

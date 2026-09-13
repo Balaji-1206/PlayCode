@@ -1,6 +1,5 @@
 "use client";
-
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   PanelGroup,
@@ -21,7 +20,6 @@ import {
 
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { LANGUAGES } from "@/lib/languages";
 import { SAMPLE_PROBLEM } from "@/lib/sampleProblem";
 import { PROBLEM_CATALOG } from "@/lib/problemCatalog";
 
@@ -32,6 +30,7 @@ import ProblemPanel from "@/components/playground/ProblemPanel";
 import EditorToolbar from "@/components/playground/EditorToolbar";
 import BottomPanel from "@/components/playground/BottomPanel";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import ProblemDirectoryModal from "@/components/modals/ProblemDirectoryModal";
 
 import type { ExecutionResult, Problem, TestResult } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
@@ -66,12 +65,14 @@ function adaptParsedProblem(parsed: ParsedProblem): Problem {
 
 interface ExecuteApiResponse {
   status: "success" | "compile_error";
+  code?: string;
   publicResults: Array<{
     caseIndex: number;
     status: "pass" | "fail" | "error";
     input: string;
     expected: string;
     received: string;
+    userLogs?: string;
     executionTime: number;
     stderr: string;
   }>;
@@ -104,7 +105,12 @@ async function callExecuteApi(
     body: JSON.stringify({ code, language, problemSessionId, publicTests, runType }),
   });
   const data = (await res.json()) as ExecuteApiResponse;
-  if (!res.ok) throw new Error(data.error ?? `Execution failed: ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 410 || data.code === "SESSION_EXPIRED") {
+      throw new Error("Problem session expired. Please re-parse the problem or select one from the Directory.");
+    }
+    throw new Error(data.error ?? `Execution failed: ${res.status}`);
+  }
 
   const testResults: TestResult[] = data.publicResults.map((r) => ({
     caseIndex: r.caseIndex,
@@ -112,6 +118,7 @@ async function callExecuteApi(
     input: r.input,
     expected: r.expected,
     received: r.received,
+    userLogs: r.userLogs,
     executionTime: r.executionTime,
   }));
 
@@ -163,11 +170,11 @@ export default function Playground() {
     setAnalysisStatus,
     setAnalysisError,
     setAnalysis,
-    isRunning,
-    isSubmitting,
     parsedProblem,
     problemSessionId,
     loadParsedProblem,
+    customInput,
+    customExpected,
   } = usePlaygroundStore();
 
   const [fontSize, setFontSize] = useState(14);
@@ -175,19 +182,38 @@ export default function Playground() {
   const [mobileView, setMobileView] = useState<MobileView>("problem");
   const [isProblemMenuOpen, setIsProblemMenuOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isDirectoryModalOpen, setIsDirectoryModalOpen] = useState(false);
+
+  // Ctrl+K / Cmd+K listener for problem directory
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsDirectoryModalOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const displayProblem: Problem = parsedProblem
     ? adaptParsedProblem(parsedProblem)
     : SAMPLE_PROBLEM;
 
-  const publicTests = parsedProblem?.testCases.public.map((tc) => ({
-    input: tc.input,
-    expectedOutput: tc.expectedOutput,
-  })) ?? [
-    { input: "[2,7,11,15]\n9", expectedOutput: "[0, 1]" },
-    { input: "[3,2,4]\n6", expectedOutput: "[1, 2]" },
-    { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
-  ];
+  const publicTests = useMemo(() => {
+    const baseTests = parsedProblem?.testCases.public.map((tc) => ({
+      input: tc.input,
+      expectedOutput: tc.expectedOutput,
+    })) ?? [
+      { input: "[2,7,11,15]\n9", expectedOutput: "[0, 1]" },
+      { input: "[3,2,4]\n6", expectedOutput: "[1, 2]" },
+      { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
+    ];
+
+    return customInput.trim()
+      ? [...baseTests, { input: customInput.trim(), expectedOutput: customExpected.trim() || "(custom)" }]
+      : baseTests;
+  }, [parsedProblem, customInput, customExpected]);
 
   // ── On-Demand AI Complexity Analysis ─────────────────────────────────────────
 
@@ -306,6 +332,19 @@ export default function Playground() {
       </div>
 
       <div className="mx-1 hidden h-4 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+
+      {/* Directory Modal Button */}
+      <button
+        onClick={() => setIsDirectoryModalOpen(true)}
+        className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+        title="Open Problem Directory (Ctrl+K)"
+      >
+        <BookOpen className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        <span className="hidden sm:inline">Directory</span>
+        <kbd className="hidden md:inline-block rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1 text-[10px] text-slate-500">
+          ⌘K
+        </kbd>
+      </button>
 
       {/* Problem Switcher Dropdown */}
       <div className="relative">
@@ -635,12 +674,19 @@ export default function Playground() {
                 onClick={() => setIsShortcutsOpen(false)}
                 className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-500 transition-colors cursor-pointer"
               >
-                Got It, Let's Code
+                Got It, Let&apos;s Code
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Problem Directory Modal (Ctrl+K) */}
+      <ProblemDirectoryModal
+        isOpen={isDirectoryModalOpen}
+        onClose={() => setIsDirectoryModalOpen(false)}
+        selectedLanguage={selectedLanguage}
+      />
     </div>
   );
 }

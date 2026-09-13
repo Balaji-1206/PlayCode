@@ -8,6 +8,7 @@ import {
   Minus,
   Plus,
   Maximize2,
+  Sparkles,
 } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { LANGUAGES } from "@/lib/languages";
@@ -32,8 +33,9 @@ export default function EditorToolbar({
   const {
     selectedLanguage,
     code,
-    setCode,
-    parsedProblem,
+    isDraftSaved,
+    formatCode,
+    resetToStarterCode,
   } = usePlaygroundStore();
 
   const [copied, setCopied] = useState(false);
@@ -61,12 +63,9 @@ export default function EditorToolbar({
       setTimeout(() => setConfirmReset(false), 3000);
       return;
     }
-    const defaultCode = parsedProblem
-      ? parsedProblem.starterCode[selectedLanguage]
-      : LANGUAGES[selectedLanguage].defaultCode;
-    setCode(defaultCode);
+    resetToStarterCode();
     setConfirmReset(false);
-  }, [confirmReset, parsedProblem, selectedLanguage, setCode]);
+  }, [confirmReset, resetToStarterCode]);
 
   // ── Font size ───────────────────────────────────────────────────────────────
 
@@ -87,8 +86,35 @@ export default function EditorToolbar({
         {code.split("\n").length} lines
       </span>
 
+      <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
+      {/* Draft status */}
+      {isDraftSaved ? (
+        <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3 w-3" />
+          <span>Draft saved</span>
+        </span>
+      ) : (
+        <span className="text-[11px] font-medium text-amber-500 animate-pulse">
+          Saving...
+        </span>
+      )}
+
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Format Code button */}
+      <button
+        onClick={formatCode}
+        aria-label="Format code"
+        className="tooltip flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+        data-tip="Format code"
+      >
+        <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+        <span className="hidden sm:inline">Format</span>
+      </button>
+
+      <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
       {/* Font size controls */}
       <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xs">
