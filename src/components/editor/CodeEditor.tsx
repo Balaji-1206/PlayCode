@@ -14,6 +14,7 @@ interface CodeEditorProps {
   language: LanguageKey;
   value: string;
   onChange: (value: string) => void;
+  fontSize?: number;
 }
 
 // ─── Monaco editor options ────────────────────────────────────────────────────
@@ -49,8 +50,13 @@ const EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function CodeEditor({ language, value, onChange }: CodeEditorProps) {
+export default function CodeEditor({ language, value, onChange, fontSize = 14 }: CodeEditorProps) {
   const monacoLanguage = LANGUAGES[language].monacoLanguage;
+
+  const editorOptions = {
+    ...EDITOR_OPTIONS,
+    fontSize,
+  };
 
   const handleMount: OnMount = (editor) => {
     // Focus the editor automatically when mounted
@@ -67,7 +73,7 @@ export default function CodeEditor({ language, value, onChange }: CodeEditorProp
       language={monacoLanguage}
       value={value}
       theme="vs-dark"
-      options={EDITOR_OPTIONS}
+      options={editorOptions}
       onMount={handleMount}
       onChange={handleChange}
       loading={

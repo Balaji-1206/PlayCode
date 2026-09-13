@@ -78,8 +78,14 @@ Output: 23`,
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ProblemParser() {
-  const { setIsParsing, setParseError, loadParsedProblem, isParsing, parseError } =
-    usePlaygroundStore();
+  const {
+    setIsParsing,
+    setParseError,
+    loadParsedProblem,
+    isParsing,
+    parseError,
+    setViewMode,
+  } = usePlaygroundStore();
 
   const [statement, setStatement] = useState("");
   const [examples, setExamples] = useState("");
@@ -198,9 +204,30 @@ e.g. Given an array of integers nums and an integer target, return indices of th
               focus:ring-1 focus:ring-violet-500
             "
           />
-          <p className="mt-1 text-right text-xs text-slate-600">
-            {statement.length} / 8000
-          </p>
+          <div className="mt-1.5 flex items-center justify-between text-xs">
+            <span className={statement.length >= 20 ? "text-emerald-400 font-medium" : "text-slate-500"}>
+              {statement.length < 20
+                ? `${20 - statement.length} more characters needed`
+                : "✓ Minimum length reached"}
+            </span>
+            <div className="flex items-center gap-2 text-slate-500">
+              <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    statement.length > 7000
+                      ? "bg-amber-400"
+                      : statement.length >= 20
+                      ? "bg-violet-500"
+                      : "bg-slate-600"
+                  }`}
+                  style={{ width: `${Math.min(100, (statement.length / 8000) * 100)}%` }}
+                />
+              </div>
+              <span className="font-mono text-[11px] text-slate-500">
+                {statement.length} / 8000
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Advanced section (examples + constraints) */}
@@ -329,12 +356,25 @@ e.g. Given an array of integers nums and an integer target, return indices of th
           )}
         </button>
 
-        {/* Info note */}
+        {/* Info note & Direct Playground link */}
         {!isParsing && (
-          <p className="mt-3 text-center text-xs text-slate-600">
-            This will generate 10–15 hidden test cases, starter code in 6 languages,
-            and driver code for automated execution.
-          </p>
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="text-center text-xs text-slate-600">
+              This will generate 10–15 hidden test cases, starter code in 6 languages,
+              and driver code for automated execution.
+            </p>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span>Prefer testing immediately?</span>
+              <button
+                id="open-sample-playground"
+                type="button"
+                onClick={() => setViewMode("playground")}
+                className="font-medium text-violet-400 underline underline-offset-4 transition-colors hover:text-violet-300"
+              >
+                Open Two Sum sample in Playground →
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Loading progress text */}

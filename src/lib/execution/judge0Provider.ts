@@ -43,20 +43,47 @@ export class Judge0Provider implements ExecutionProvider {
 
 // ─── Provider factory ──────────────────────────────────────────────────────────
 
-import type { ExecutionProvider as IExecutionProvider } from "./types";
+import type { ExecutionProvider as IExecutionProvider, ExecutionRequest, ExecutionResponse } from "./types";
 import { pistonProvider } from "./pistonProvider";
+import { localProvider } from "./localProvider";
+
+class ResilientExecutionProvider implements IExecutionProvider {
+  readonly name = "Resilient (Piston + Local Fallback)";
+
+  async execute(request: ExecutionRequest): Promise<ExecutionResponse> {
+    try {
+      const response = await pistonProvider.execute(request);
+      if (
+        response.stderr.includes("whitelist only") ||
+        response.stderr.includes("Piston API error 401") ||
+        response.stderr.includes("Piston error")
+      ) {
+        return await localProvider.execute(request);
+      }
+      return response;
+    } catch {
+      // Automatic fallback to local provider on network or Piston error
+      return await localProvider.execute(request);
+    }
+  }
+}
+
+const resilientProvider = new ResilientExecutionProvider();
 
 /**
  * Returns the configured execution provider.
- * Set EXECUTION_PROVIDER=judge0 in .env.local to switch to Judge0.
- * Defaults to Piston (free, no API key required).
+ * Supports: "local", "piston", "auto" (default), or "judge0".
  */
 export function getExecutionProvider(): IExecutionProvider {
-  const selected = process.env.EXECUTION_PROVIDER ?? "piston";
+  const selected = process.env.EXECUTION_PROVIDER ?? "auto";
 
   switch (selected) {
+    case "local":
+      return localProvider;
+
+    case "auto":
     case "piston":
-      return pistonProvider;
+      return resilientProvider;
 
     case "judge0": {
       const apiKey = process.env.JUDGE0_API_KEY;
@@ -72,8 +99,6 @@ export function getExecutionProvider(): IExecutionProvider {
     }
 
     default:
-      throw new Error(
-        `Unknown EXECUTION_PROVIDER="${selected}". Valid options: piston, judge0`
-      );
+      return resilientProvider;
   }
 }
