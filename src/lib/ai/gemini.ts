@@ -27,8 +27,18 @@ export function getActiveAiProvider(): "gemini" | "openai" {
   return "openai";
 }
 
-function cleanJson(raw: string): string {
+/**
+ * Sanitizes JSON strings returned by LLMs:
+ * 1. Strips markdown fences (```json ... ```)
+ * 2. Escapes unescaped control characters (ASCII 0x00 to 0x1F, like raw \n, \r, \t)
+ *    inside string literals, which cause:
+ *    "SyntaxError: Bad control character in string literal in JSON at position ..."
+ * 3. Removes illegal trailing commas before } or ].
+ */
+export function sanitizeJsonString(raw: string): string {
   let cleaned = raw.trim();
+
+  // Strip markdown code fences if present
   if (cleaned.startsWith("```json")) {
     cleaned = cleaned.slice(7);
   } else if (cleaned.startsWith("```")) {
@@ -37,7 +47,85 @@ function cleanJson(raw: string): string {
   if (cleaned.endsWith("```")) {
     cleaned = cleaned.slice(0, -3);
   }
-  return cleaned.trim();
+  cleaned = cleaned.trim();
+
+  // Character-by-character scanner to escape control characters within strings
+  let out = "";
+  let inString = false;
+  let isEscaped = false;
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    const code = cleaned.charCodeAt(i);
+
+    if (inString) {
+      if (isEscaped) {
+        // Current character is preceded by a backslash
+        out += ch;
+        isEscaped = false;
+      } else if (ch === "\\") {
+        out += ch;
+        isEscaped = true;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else if (code < 32) {
+        // Control character inside a string literal! Must be escaped for valid JSON.
+        switch (ch) {
+          case "\n":
+            out += "\\n";
+            break;
+          case "\r":
+            out += "\\r";
+            break;
+          case "\t":
+            out += "\\t";
+            break;
+          case "\b":
+            out += "\\b";
+            break;
+          case "\f":
+            out += "\\f";
+            break;
+          default:
+            out += "\\u" + code.toString(16).padStart(4, "0");
+            break;
+        }
+      } else {
+        out += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inString = true;
+      }
+      out += ch;
+    }
+  }
+
+  // Remove trailing commas before closing braces or brackets: , } or , ]
+  out = out.replace(/,\s*([\]}])/g, "$1");
+
+  return out;
+}
+
+export function safeJsonParse<T>(raw: string): T {
+  const sanitized = sanitizeJsonString(raw);
+  try {
+    return JSON.parse(sanitized) as T;
+  } catch (firstErr) {
+    // Attempt extracting between first '{' and last '}'
+    const firstBrace = sanitized.indexOf("{");
+    const lastBrace = sanitized.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const slice = sanitized.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(slice) as T;
+      } catch {
+        // ignore and continue
+      }
+    }
+    throw firstErr;
+  }
 }
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
@@ -112,7 +200,7 @@ ${userMessage}`;
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();
-  const raw = JSON.parse(cleanJson(text));
+  const raw = safeJsonParse<unknown>(text);
 
   const validated = ParsedProblemSchema.safeParse(raw);
   if (!validated.success) {
@@ -177,7 +265,7 @@ ${userMessage}`;
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();
-  const raw = JSON.parse(cleanJson(text));
+  const raw = safeJsonParse<unknown>(text);
 
   const validated = CodeAnalysisSchema.safeParse(raw);
   if (!validated.success) {
