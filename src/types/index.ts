@@ -53,6 +53,12 @@ export interface ExecutionResult {
   } | null;
 }
 
+// ─── Analysis Types ───────────────────────────────────────────────────────────────
+
+export type AnalysisStatus = "idle" | "loading" | "ready" | "error";
+
+export type BottomTab = "output" | "analysis";
+
 // ─── Store Types ───────────────────────────────────────────────────────────────
 
 export type ViewMode = "parser" | "playground";
@@ -70,4 +76,8 @@ export interface PlaygroundState {
   parseError: string | null;
   // Step 3 additions
   problemSessionId: string | null;
+  // Step 4 additions
+  activeBottomTab: BottomTab;
+  analysisStatus: AnalysisStatus;
+  analysisError: string | null;
 }

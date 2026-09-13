@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { SendHorizontal, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { LANGUAGES } from "@/lib/languages";
 import { SAMPLE_PROBLEM } from "@/lib/sampleProblem";
@@ -9,9 +9,10 @@ import LanguageSelector from "@/components/playground/LanguageSelector";
 import RunButton from "@/components/playground/RunButton";
 import SubmitButton from "@/components/playground/SubmitButton";
 import ProblemPanel from "@/components/playground/ProblemPanel";
-import Terminal from "@/components/playground/Terminal";
+import BottomPanel from "@/components/playground/BottomPanel";
 import type { ExecutionResult, Problem, TestResult } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
+import type { CodeAnalysis } from "@/lib/schemas/analysis";
 
 const CodeEditor = dynamic(() => import("@/components/editor/CodeEditor"), {
   ssr: false,
@@ -36,7 +37,7 @@ function adaptParsedProblem(parsed: ParsedProblem): Problem {
   };
 }
 
-// ─── API response type ────────────────────────────────────────────────────────
+// ─── Execute API call ─────────────────────────────────────────────────────────
 
 interface ExecuteApiResponse {
   status: "success" | "compile_error";
@@ -56,8 +57,6 @@ interface ExecuteApiResponse {
   error?: string;
 }
 
-// ─── Execution call ───────────────────────────────────────────────────────────
-
 async function callExecuteApi(
   code: string,
   language: string,
@@ -68,13 +67,7 @@ async function callExecuteApi(
   const response = await fetch("/api/code/execute", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      code,
-      language,
-      problemSessionId,
-      publicTests,
-      runType,
-    }),
+    body: JSON.stringify({ code, language, problemSessionId, publicTests, runType }),
   });
 
   const data = (await response.json()) as ExecuteApiResponse;
@@ -83,7 +76,6 @@ async function callExecuteApi(
     throw new Error(data.error ?? `Execution failed: ${response.status}`);
   }
 
-  // Map API response → ExecutionResult
   const testResults: TestResult[] = data.publicResults.map((r) => ({
     caseIndex: r.caseIndex,
     status: r.status as TestResult["status"],
@@ -104,7 +96,34 @@ async function callExecuteApi(
   };
 }
 
-// ─── Playground layout ────────────────────────────────────────────────────────
+// ─── Analyze API call ─────────────────────────────────────────────────────────
+
+async function callAnalyzeApi(
+  code: string,
+  language: string,
+  problemTitle: string,
+  problemDescription: string
+): Promise<CodeAnalysis> {
+  const response = await fetch("/api/code/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, language, problemTitle, problemDescription }),
+  });
+
+  const data = (await response.json()) as { analysis?: CodeAnalysis; error?: string };
+
+  if (!response.ok) {
+    throw new Error(data.error ?? `Analysis failed: ${response.status}`);
+  }
+
+  if (!data.analysis) {
+    throw new Error("Server returned an empty analysis.");
+  }
+
+  return data.analysis;
+}
+
+// ─── Playground ───────────────────────────────────────────────────────────────
 
 export default function Playground() {
   const {
@@ -115,6 +134,10 @@ export default function Playground() {
     setIsRunning,
     setIsSubmitting,
     setViewMode,
+    setActiveBottomTab,
+    setAnalysisStatus,
+    setAnalysisError,
+    setAnalysis,
     isRunning,
     isSubmitting,
     parsedProblem,
@@ -125,29 +148,25 @@ export default function Playground() {
     ? adaptParsedProblem(parsedProblem)
     : SAMPLE_PROBLEM;
 
-  // Public test cases to run against (visible to user)
   const publicTests = parsedProblem?.testCases.public.map((tc) => ({
     input: tc.input,
     expectedOutput: tc.expectedOutput,
   })) ?? [
-    // Fallback for sample problem (no AI parsing)
     { input: "[2,7,11,15]\n9", expectedOutput: "[0, 1]" },
     { input: "[3,2,4]\n6", expectedOutput: "[1, 2]" },
     { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
   ];
 
-  // ── Run (public tests only) ────────────────────────────────────────────────
+  // ── Run (public tests only, no analysis) ──────────────────────────────────
 
   const handleRun = async () => {
     setIsRunning(true);
     setOutput(null);
+    setActiveBottomTab("output");
+
     try {
       const result = await callExecuteApi(
-        code,
-        selectedLanguage,
-        problemSessionId,
-        publicTests,
-        "run"
+        code, selectedLanguage, problemSessionId, publicTests, "run"
       );
       setOutput(result);
     } catch (err) {
@@ -166,20 +185,46 @@ export default function Playground() {
     }
   };
 
-  // ── Submit (public + hidden tests) ─────────────────────────────────────────
+  // ── Submit (public + hidden tests + AI analysis in parallel) ──────────────
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setOutput(null);
+    setActiveBottomTab("output");
+
+    // Start AI analysis immediately in parallel — don't await it yet.
+    // This way, execution results appear first without waiting for AI.
+    setAnalysisStatus("loading");
+    setAnalysisError(null);
+    setAnalysis(null);
+
+    const analysisPromise = callAnalyzeApi(
+      code,
+      selectedLanguage,
+      displayProblem.title,
+      displayProblem.description
+    );
+
     try {
+      // Execute against test cases
       const result = await callExecuteApi(
-        code,
-        selectedLanguage,
-        problemSessionId,
-        publicTests,
-        "submit"
+        code, selectedLanguage, problemSessionId, publicTests, "submit"
       );
       setOutput(result);
+      setIsSubmitting(false);
+
+      // Switch to analysis tab automatically once analysis resolves
+      try {
+        const analysis = await analysisPromise;
+        setAnalysis(analysis);
+        setAnalysisStatus("ready");
+        // Auto-switch to analysis tab so the user sees it
+        setActiveBottomTab("analysis");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Analysis failed";
+        setAnalysisError(message);
+        setAnalysisStatus("error");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
       setOutput({
@@ -191,16 +236,17 @@ export default function Playground() {
         testResults: [],
         hiddenSummary: null,
       });
-    } finally {
       setIsSubmitting(false);
+
+      // Cancel analysis gracefully if execution failed
+      analysisPromise.catch(() => {});
+      setAnalysisStatus("idle");
     }
   };
 
-  const isbusy = isRunning || isSubmitting;
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* ══════════════════════ Navbar ══════════════════════ */}
+      {/* ══ Navbar ══════════════════════════════════════════════════════════ */}
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-700/60 bg-slate-900 px-4 py-2.5">
         <button
           onClick={() => setViewMode("parser")}
@@ -233,21 +279,21 @@ export default function Playground() {
         </div>
 
         <div className="flex-1" />
-
         <LanguageSelector />
         <RunButton onRun={handleRun} />
         <SubmitButton onSubmit={handleSubmit} />
       </header>
 
-      {/* ══════════════════════ Content ══════════════════════ */}
+      {/* ══ Content ═════════════════════════════════════════════════════════ */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Left: Problem */}
+        {/* Left: Problem panel */}
         <div className="hidden w-[42%] shrink-0 border-r border-slate-700/60 md:flex md:flex-col">
           <ProblemPanel problem={displayProblem} />
         </div>
 
-        {/* Right: Editor + Terminal */}
+        {/* Right: Editor + Bottom panel */}
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* Editor toolbar */}
           <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/60 bg-slate-800/50 px-3 py-1.5">
             <span className="text-xs text-slate-500">
               {LANGUAGES[selectedLanguage].label}
@@ -258,6 +304,7 @@ export default function Playground() {
             </span>
           </div>
 
+          {/* Monaco Editor */}
           <div className="min-h-0 flex-[65]">
             <CodeEditor
               language={selectedLanguage}
@@ -268,8 +315,9 @@ export default function Playground() {
 
           <div className="h-px shrink-0 bg-slate-700/60" />
 
+          {/* Tabbed bottom panel: Output + AI Analysis */}
           <div className="min-h-0 flex-[35]">
-            <Terminal isSubmitMode={isSubmitting || (usePlaygroundStore.getState().output?.hiddenSummary != null)} />
+            <BottomPanel />
           </div>
         </div>
       </div>

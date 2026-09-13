@@ -1,6 +1,14 @@
 import { create } from "zustand";
-import type { LanguageKey, ExecutionResult, PlaygroundState, ViewMode } from "@/types";
+import type {
+  LanguageKey,
+  ExecutionResult,
+  PlaygroundState,
+  ViewMode,
+  BottomTab,
+  AnalysisStatus,
+} from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
+import type { CodeAnalysis } from "@/lib/schemas/analysis";
 import { LANGUAGES, DEFAULT_LANGUAGE } from "@/lib/languages";
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -21,6 +29,13 @@ interface PlaygroundActions {
   setParseError: (error: string | null) => void;
   loadParsedProblem: (problem: ParsedProblem, language: LanguageKey, sessionId: string) => void;
   parsedProblem: ParsedProblem | null;
+
+  // Step 4: Analysis
+  setActiveBottomTab: (tab: BottomTab) => void;
+  setAnalysisStatus: (status: AnalysisStatus) => void;
+  setAnalysisError: (error: string | null) => void;
+  setAnalysis: (analysis: CodeAnalysis | null) => void;
+  analysis: CodeAnalysis | null;
 }
 
 type PlaygroundStore = PlaygroundState & PlaygroundActions;
@@ -45,6 +60,12 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
   // Step 3
   problemSessionId: null,
 
+  // Step 4
+  activeBottomTab: "output",
+  analysisStatus: "idle",
+  analysisError: null,
+  analysis: null,
+
   // ── Editor actions ─────────────────────────────────────────────────────────
 
   setLanguage: (lang) =>
@@ -55,6 +76,9 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
         : state.code === LANGUAGES[state.selectedLanguage].defaultCode
           ? LANGUAGES[lang].defaultCode
           : state.code,
+      // Reset analysis when language changes
+      analysis: null,
+      analysisStatus: "idle",
     })),
 
   setCode: (code) => set({ code }),
@@ -67,7 +91,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
 
   setIsSubmitting: (submitting) => set({ isSubmitting: submitting }),
 
-  resetOutput: () => set({ output: null }),
+  resetOutput: () => set({ output: null, analysis: null, analysisStatus: "idle" }),
 
   // ── Step 2 actions ─────────────────────────────────────────────────────────
 
@@ -86,7 +110,21 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
       output: null,
       parseError: null,
       activeTestCase: 0,
-      problemSessionId: sessionId,  // Store session ID for execute calls
+      problemSessionId: sessionId,
+      // Reset analysis for new problem
+      analysis: null,
+      analysisStatus: "idle",
+      activeBottomTab: "output",
     });
   },
+
+  // ── Step 4: Analysis actions ───────────────────────────────────────────────
+
+  setActiveBottomTab: (tab) => set({ activeBottomTab: tab }),
+
+  setAnalysisStatus: (status) => set({ analysisStatus: status }),
+
+  setAnalysisError: (error) => set({ analysisError: error }),
+
+  setAnalysis: (analysis) => set({ analysis }),
 }));
