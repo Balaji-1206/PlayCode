@@ -1,0 +1,45 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap");
+
+@import "tailwindcss";
+
+/* ─── Base reset ─────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ─── Custom scrollbars (webkit) ─────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155; /* slate-700 */
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569; /* slate-600 */
+}
+
+/* ─── Selection colour ──────────────────────────────────────────────────────── */
+
+::selection {
+  background: #7c3aed40; /* violet-600 at 25% opacity */
+  color: inherit;
+}
+
+/* ─── Monaco editor overrides ────────────────────────────────────────────────── */
+
+/* Remove the border Monaco adds around the editor widget */
+.monaco-editor .overflow-guard {
+  border-radius: 0 !important;
+}
