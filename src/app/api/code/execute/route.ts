@@ -11,7 +11,9 @@ import type { InternalLanguageKey } from "@/lib/execution/types";
 const ExecuteRequestSchema = z.object({
   code: z.string().min(1, "Code cannot be empty").max(50000, "Code is too large"),
   language: z.enum(["python", "cpp", "java", "javascript", "go", "rust"]),
-  problemSessionId: z.string().uuid().nullable().optional(),
+  problemSessionId: z.string().nullable().optional(),
+  problemId: z.string().optional(),
+  problemTitle: z.string().optional(),
   runType: z.enum(["run", "submit"]).default("run"),
 });
 
@@ -96,17 +98,20 @@ export function extractOutputAndLogs(rawStdout: string, expectedOutput?: string)
   officialOutput: string;
   userLogs: string;
 } {
-  const startIndex = rawStdout.indexOf(RESULT_START_DELIMITER);
+  const startIndex = rawStdout.lastIndexOf(RESULT_START_DELIMITER);
   if (startIndex !== -1) {
-    const endIndex = rawStdout.indexOf(RESULT_END_DELIMITER, startIndex + RESULT_START_DELIMITER.length);
+    const afterStart = startIndex + RESULT_START_DELIMITER.length;
+    const endIndex = rawStdout.indexOf(RESULT_END_DELIMITER, afterStart);
     const userLogs = (
       rawStdout.substring(0, startIndex) +
       (endIndex !== -1 ? rawStdout.substring(endIndex + RESULT_END_DELIMITER.length) : "")
     ).trim();
 
-    const officialOutput = endIndex !== -1
-      ? rawStdout.substring(startIndex + RESULT_START_DELIMITER.length, endIndex).trim()
-      : rawStdout.substring(startIndex + RESULT_START_DELIMITER.length).trim();
+    const officialOutput = (
+      endIndex !== -1
+        ? rawStdout.substring(afterStart, endIndex)
+        : rawStdout.substring(afterStart)
+    ).trim();
 
     return { officialOutput, userLogs };
   }
@@ -163,18 +168,40 @@ export async function POST(request: NextRequest) {
 
   // ── 2. Resolve test cases and driver code ──────────────────────────────────
   let session: CachedProblemSession | null = null;
-  if (problemSessionId) {
-    session = await getProblemSession(problemSessionId);
-    if (!session) {
-      return NextResponse.json(
-        {
-          error: "Problem session expired or invalid. Please re-parse the problem to generate fresh drivers.",
-          code: "SESSION_EXPIRED",
-        },
-        { status: 410 }
-      );
+  const targetSessionId = problemSessionId || parsed.data.problemId;
+
+  if (targetSessionId) {
+    session = await getProblemSession(targetSessionId);
+  }
+
+  // If session not found by ID, try looking up by problem title or problemId slug
+  if (!session && (parsed.data.problemTitle || parsed.data.problemId || problemSessionId)) {
+    const candidateKeys = [
+      parsed.data.problemId,
+      problemSessionId,
+      parsed.data.problemTitle?.toLowerCase().replace(/\s+/g, "-"),
+    ].filter(Boolean) as string[];
+
+    for (const key of candidateKeys) {
+      const candidate = await getProblemSession(key);
+      if (candidate) {
+        session = candidate;
+        break;
+      }
     }
-  } else {
+  }
+
+  if (problemSessionId && !session) {
+    return NextResponse.json(
+      {
+        error: "Problem session expired or invalid. Please re-parse the problem or select one from the Problem Directory.",
+        code: "SESSION_EXPIRED",
+      },
+      { status: 410 }
+    );
+  }
+
+  if (!session) {
     // Default session for initial interactive demo before any problem is parsed
     session = SAMPLE_TWO_SUM_SESSION;
   }
@@ -246,7 +273,7 @@ import java.io.*;
 `;
     const userCodeWithImports = code.includes("import ") ? code : `${imports}\n${code}`;
     const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithImports}` : userCodeWithImports;
-    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : userCodeWithImports;
+    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
   }
 
   const codeWithDefs = dsaDefs ? `${dsaDefs}\n${code}` : code;

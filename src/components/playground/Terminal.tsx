@@ -9,15 +9,62 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Copy,
+  Check,
+  ArrowRight,
 } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import TestCaseTabs from "@/components/playground/TestCaseTabs";
 import VerdictBanner from "@/components/playground/VerdictBanner";
 import type { TestResult, FailedHiddenCase } from "@/types";
 
+// ─── Reusable Copy Button ────────────────────────────────────────────────────
+
+function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard access denied or unsupported
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+      title={label}
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 text-emerald-500" />
+          <span className="text-emerald-500">Copied</span>
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3" />
+          <span>{label}</span>
+        </>
+      )}
+    </button>
+  );
+}
+
 // ─── Single test case detail view ─────────────────────────────────────────────
 
-function TestCaseDetail({ result }: { result: TestResult }) {
+function TestCaseDetail({
+  result,
+  onUseAsCustomInput,
+}: {
+  result: TestResult;
+  onUseAsCustomInput?: (input: string) => void;
+}) {
   const isPassing = result.status === "pass";
   const isError = result.status === "error";
 
@@ -53,9 +100,25 @@ function TestCaseDetail({ result }: { result: TestResult }) {
 
       {/* Input */}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F1F6FA] dark:bg-[#111827] p-3 shadow-2xs">
-        <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-          Input
-        </p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Input
+          </p>
+          <div className="flex items-center gap-1">
+            {onUseAsCustomInput && (
+              <button
+                type="button"
+                onClick={() => onUseAsCustomInput(result.input)}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
+                title="Load into Custom Test tab"
+              >
+                <span>Debug in Custom Tab</span>
+                <ArrowRight className="h-2.5 w-2.5" />
+              </button>
+            )}
+            <CopyButton text={result.input} />
+          </div>
+        </div>
         <pre className="whitespace-pre-wrap text-slate-800 dark:text-slate-200">{result.input}</pre>
       </div>
 
@@ -63,17 +126,23 @@ function TestCaseDetail({ result }: { result: TestResult }) {
         <>
           {/* Expected */}
           <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 shadow-2xs">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              Expected Output
-            </p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Expected Output
+              </p>
+              <CopyButton text={result.expected} />
+            </div>
             <pre className="whitespace-pre-wrap text-emerald-700 dark:text-emerald-300 font-semibold">{result.expected}</pre>
           </div>
 
           {/* Received */}
           <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 p-3 shadow-2xs">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-              Your Output
-            </p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+                Your Output
+              </p>
+              <CopyButton text={result.received || ""} />
+            </div>
             <pre className="whitespace-pre-wrap text-red-700 dark:text-red-300 font-semibold">
               {result.received || "(no output)"}
             </pre>
@@ -83,18 +152,24 @@ function TestCaseDetail({ result }: { result: TestResult }) {
 
       {isPassing && (
         <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 shadow-2xs">
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-            Output
-          </p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Output
+            </p>
+            <CopyButton text={result.received || result.expected} />
+          </div>
           <pre className="whitespace-pre-wrap text-emerald-700 dark:text-emerald-300 font-semibold">{result.received || result.expected}</pre>
         </div>
       )}
 
       {result.userLogs && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-[#0B1120] p-3 shadow-2xs">
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-            Console Logs (stdout)
-          </p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              Console Logs (stdout)
+            </p>
+            <CopyButton text={result.userLogs} />
+          </div>
           <pre className="whitespace-pre-wrap font-mono text-xs text-slate-700 dark:text-slate-300">{result.userLogs}</pre>
         </div>
       )}
@@ -108,10 +183,12 @@ function HiddenTestSummary({
   total,
   passed,
   failedCase,
+  onUseAsCustomInput,
 }: {
   total: number;
   passed: number;
   failedCase?: FailedHiddenCase | null;
+  onUseAsCustomInput?: (input: string) => void;
 }) {
   const [showHiddenCase, setShowHiddenCase] = useState(false);
   const allPassed = passed === total;
@@ -194,9 +271,25 @@ function HiddenTestSummary({
                   </div>
 
                   <div>
-                    <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                      Input
-                    </span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Input
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {onUseAsCustomInput && (
+                          <button
+                            type="button"
+                            onClick={() => onUseAsCustomInput(failedCase.input)}
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
+                            title="Load into Custom Test tab"
+                          >
+                            <span>Debug in Custom Tab</span>
+                            <ArrowRight className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                        <CopyButton text={failedCase.input} />
+                      </div>
+                    </div>
                     <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-slate-200 dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-900 p-2.5 font-mono text-xs text-slate-800 dark:text-slate-200">
                       {failedCase.input}
                     </pre>
@@ -204,18 +297,24 @@ function HiddenTestSummary({
 
                   <div className="grid gap-2.5 sm:grid-cols-2">
                     <div>
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 mb-1">
-                        Your Output
-                      </span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                          Your Output
+                        </span>
+                        <CopyButton text={failedCase.received || ""} />
+                      </div>
                       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 p-2.5 font-mono text-xs text-rose-700 dark:text-rose-300 font-semibold">
                         {failedCase.received || "(no output)"}
                       </pre>
                     </div>
 
                     <div>
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
-                        Expected Output
-                      </span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                          Expected Output
+                        </span>
+                        <CopyButton text={failedCase.expected} />
+                      </div>
                       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30 p-2.5 font-mono text-xs text-emerald-700 dark:text-emerald-300 font-semibold">
                         {failedCase.expected}
                       </pre>
@@ -224,9 +323,12 @@ function HiddenTestSummary({
 
                   {failedCase.stderr && (
                     <div>
-                      <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">
-                        stderr / Error Details
-                      </span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                          stderr / Error Details
+                        </span>
+                        <CopyButton text={failedCase.stderr} />
+                      </div>
                       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/30 p-2.5 font-mono text-xs text-amber-700 dark:text-amber-300">
                         {failedCase.stderr}
                       </pre>
@@ -346,6 +448,11 @@ export default function Terminal() {
 
   const activeResult = standardResults[selectedCase];
 
+  const handleUseAsCustomInput = (inp: string) => {
+    setCustomInput(inp);
+    setIsCustomTestActive(true);
+  };
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-[#111827] text-slate-700 dark:text-slate-300 transition-colors text-sm">
       {/* ── Header: test case tabs + Custom Test ── */}
@@ -420,18 +527,29 @@ export default function Terminal() {
 
             {output.stderr && output.testResults.length === 0 && (
               <div className="rounded-xl border border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20 p-3.5">
-                <p className="mb-1 text-xs font-bold text-red-600 dark:text-red-400">Compilation Error</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold text-red-600 dark:text-red-400">Compilation Error</p>
+                  <CopyButton text={output.stderr} />
+                </div>
                 <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs text-red-700 dark:text-red-300">
                   {output.stderr}
                 </pre>
               </div>
             )}
 
-            {activeResult && <TestCaseDetail result={activeResult} />}
+            {activeResult && (
+              <TestCaseDetail
+                result={activeResult}
+                onUseAsCustomInput={handleUseAsCustomInput}
+              />
+            )}
 
             {activeResult && output.stderr && output.testResults.length > 0 && (
               <div className="rounded-xl border border-slate-200 bg-[#F1F6FA] dark:border-slate-800 dark:bg-slate-900/50 p-3">
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">stderr</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">stderr</p>
+                  <CopyButton text={output.stderr} />
+                </div>
                 <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs text-slate-600 dark:text-slate-400">
                   {output.stderr}
                 </pre>
@@ -443,6 +561,7 @@ export default function Terminal() {
                 total={output.hiddenSummary.total}
                 passed={output.hiddenSummary.passed}
                 failedCase={output.failedHiddenCase}
+                onUseAsCustomInput={handleUseAsCustomInput}
               />
             )}
           </div>

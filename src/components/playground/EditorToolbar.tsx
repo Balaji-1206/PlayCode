@@ -9,6 +9,7 @@ import {
   Plus,
   Maximize2,
   Sparkles,
+  BookOpen,
 } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { LANGUAGES } from "@/lib/languages";
@@ -20,6 +21,7 @@ interface EditorToolbarProps {
   onFontSizeChange: (size: number) => void;
   onToggleFullscreen: () => void;
   isFullscreen: boolean;
+  onOpenEditorial?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ export default function EditorToolbar({
   onFontSizeChange,
   onToggleFullscreen,
   isFullscreen,
+  onOpenEditorial,
 }: EditorToolbarProps) {
   const {
     selectedLanguage,
@@ -102,6 +105,21 @@ export default function EditorToolbar({
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Editorial / Solution button */}
+      {onOpenEditorial && (
+        <button
+          onClick={onOpenEditorial}
+          aria-label="View solution and editorial"
+          className="tooltip flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
+          data-tip="Editorial & Solution"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Editorial</span>
+        </button>
+      )}
+
+      {onOpenEditorial && <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />}
 
       {/* Format Code button */}
       <button

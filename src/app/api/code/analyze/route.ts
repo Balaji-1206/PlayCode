@@ -5,7 +5,9 @@ import {
   AnalyzeRequestSchema,
   CodeAnalysisSchema,
   type CodeAnalysis,
+  type OptimizationSuggestion,
 } from "@/lib/schemas/analysis";
+import { findMatchingCatalogProblem } from "@/lib/problemCatalog";
 import {
   getActiveAiProvider,
   isGeminiConfigured,
@@ -163,42 +165,133 @@ Analyze this solution thoroughly.`;
     }
   }
 
-  // ── 5. Intelligent offline fallback analysis ────────────────────────────────
-  const isPython = language === "python";
-  const fallbackAnalysis: CodeAnalysis = {
-    approach: "Optimal single-pass hash-map lookup algorithm.",
-    timeComplexity: {
-      best: "O(1)",
-      average: "O(n)",
-      worst: "O(n)",
-      explanation: "Single pass through the array with O(1) average hash map lookups.",
-      dominantOperations: ["Single loop scan over elements: O(n)", "Hash map complement lookup: O(1) avg"],
-      complexityRank: 3,
-    },
-    spaceComplexity: {
-      value: "O(n)",
-      auxiliary: "O(n)",
-      isAuxiliary: true,
-      explanation: "Uses a hash table to store complement values for up to n elements.",
-      allocatedStructures: ["Hash table of seen elements: O(n) auxiliary space"],
-    },
-    isOptimal: true,
-    optimalComplexity: "O(n)",
-    optimalSpaceComplexity: "O(n)",
-    qualityScore: 9,
-    strengths: [
-      "Optimal O(n) time complexity using a hash table for fast lookups",
-      "Single-pass traversal without nested loops",
-      "Clear variable naming and proper solution structure",
-    ],
-    bottlenecks: [],
-    optimizationSuggestions: [],
-    overallVerdict: "Efficient, clean, and optimal implementation.",
-    languageSpecificFeedback: isPython
-      ? "Idiomatic Python using enumerate and dict for index tracking."
-      : `Clean and idiomatic ${language} implementation.`,
-  };
+  // ── 5. Intelligent dynamic offline fallback analysis ────────────────────────
+  const fallbackAnalysis = generateDynamicFallbackAnalysis(
+    code,
+    language,
+    problemTitle,
+    problemDescription
+  );
 
   setCachedAnalysis(cacheKey, fallbackAnalysis);
   return NextResponse.json({ analysis: fallbackAnalysis }, { status: 200 });
+}
+
+function generateDynamicFallbackAnalysis(
+  code: string,
+  language: string,
+  problemTitle: string,
+  problemDescription: string
+): CodeAnalysis {
+  const catalogMatch = findMatchingCatalogProblem(problemTitle, problemDescription);
+  const targetTime = catalogMatch?.timeComplexityHint ?? "O(n)";
+  const targetSpace = catalogMatch?.spaceComplexityHint ?? "O(1)";
+  const title = catalogMatch?.title ?? problemTitle;
+
+  // Simple heuristic code inspection
+  const hasNestedLoops = /(for|while)[\s\S]*?(for|while)/.test(code) && code.split(/for|while/).length > 2;
+  const hasSingleLoop = /(for|while)/.test(code);
+  const usesHashMap = /dict|HashMap|unordered_map|Map|set|unordered_set|HashSet/.test(code);
+  const usesStack = /stack|Stack|Deque|pop\(|push\(/.test(code);
+  const usesRecursion = /dfs|helper|solve|traverse/.test(code) && code.includes("return");
+
+  let timeComplexityStr = targetTime;
+  let timeRank = 3;
+  let explanation = `Standard iteration over inputs with ${targetTime} efficiency.`;
+  const dominantOperations: string[] = [];
+
+  if (hasNestedLoops && !code.includes("log")) {
+    timeComplexityStr = "O(n²)";
+    timeRank = 5;
+    explanation = "Nested loops iterating over the dataset resulting in quadratic time.";
+    dominantOperations.push("Nested iterations across inputs: O(n²)");
+  } else if (hasSingleLoop) {
+    timeComplexityStr = targetTime.includes("log") ? targetTime : "O(n)";
+    timeRank = targetTime.includes("log") ? 4 : 3;
+    explanation = `Single pass linear scan over elements executing in ${timeComplexityStr}.`;
+    dominantOperations.push(`Linear traversal over elements: ${timeComplexityStr}`);
+  } else if (usesRecursion) {
+    timeComplexityStr = "O(n)";
+    timeRank = 3;
+    explanation = "Recursive depth-first traversal visiting elements.";
+    dominantOperations.push("Recursive tree/graph traversal: O(n)");
+  }
+
+  let spaceComplexityStr = targetSpace;
+  const allocatedStructures: string[] = [];
+  if (usesHashMap) {
+    spaceComplexityStr = "O(n)";
+    allocatedStructures.push("Hash table / dictionary for fast lookups: O(n)");
+  } else if (usesStack) {
+    spaceComplexityStr = "O(n)";
+    allocatedStructures.push("Stack data structure for tracking elements: O(n)");
+  } else if (usesRecursion) {
+    spaceComplexityStr = "O(h)";
+    allocatedStructures.push("Recursive call stack frames: O(h)");
+  } else {
+    allocatedStructures.push("Fixed scalar variables: O(1)");
+  }
+
+  const isOptimal = timeComplexityStr === targetTime;
+  const qualityScore = isOptimal ? 9 : hasNestedLoops ? 6 : 7;
+
+  const strengths: string[] = [
+    `Clean, structured implementation for ${title}`,
+    `Proper function signatures and idiomatic syntax for ${language}`,
+  ];
+  if (isOptimal) {
+    strengths.push(`Achieves theoretical optimal time complexity of ${targetTime}`);
+  }
+  if (usesHashMap) strengths.push("Utilizes hash table for constant-time amortized lookups");
+  if (usesStack) strengths.push("Leverages stack structure for orderly element processing");
+
+  const bottlenecks: string[] = [];
+  const optimizationSuggestions: OptimizationSuggestion[] = [];
+
+  if (!isOptimal && hasNestedLoops) {
+    bottlenecks.push("Nested iterations will time out on inputs larger than 10⁴");
+    optimizationSuggestions.push({
+      title: "Optimize to linear time",
+      description: `Consider using a hash table, two-pointer, or dynamic programming approach to reduce complexity to ${targetTime}.`,
+      impact: "high",
+      resultingComplexity: targetTime,
+    });
+  }
+
+  const overallVerdict = isOptimal
+    ? `Great job! Your solution for ${title} matches the optimal ${targetTime} complexity.`
+    : `Working solution for ${title}, but can be optimized to reach ${targetTime}.`;
+
+  const languageSpecificFeedback =
+    language === "python"
+      ? "Idiomatic Python style with clear variable naming."
+      : `Clean and idiomatic ${language} structure.`;
+
+  return {
+    approach: catalogMatch?.editorial?.approach ?? `Algorithmic solution for ${title} utilizing standard data structures.`,
+    timeComplexity: {
+      best: "O(1)",
+      average: timeComplexityStr,
+      worst: timeComplexityStr,
+      explanation,
+      dominantOperations,
+      complexityRank: timeRank,
+    },
+    spaceComplexity: {
+      value: spaceComplexityStr,
+      auxiliary: spaceComplexityStr,
+      isAuxiliary: true,
+      explanation: `Allocates ${spaceComplexityStr} auxiliary memory beyond input.`,
+      allocatedStructures,
+    },
+    isOptimal,
+    optimalComplexity: targetTime,
+    optimalSpaceComplexity: targetSpace,
+    qualityScore,
+    strengths,
+    bottlenecks,
+    optimizationSuggestions,
+    overallVerdict,
+    languageSpecificFeedback,
+  };
 }

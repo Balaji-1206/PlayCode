@@ -135,7 +135,46 @@ export function safeJsonParse<T>(raw: string): T {
   }
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+export interface AiProviderInfo {
+  provider: "gemini" | "openai" | "none";
+  model: string;
+  isConfigured: boolean;
+  label: string;
+}
+
+export function getAiProviderInfo(): AiProviderInfo {
+  const active = getActiveAiProvider();
+  const hasGemini = isGeminiConfigured();
+  const hasOpenAi = Boolean(
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
+
+  if (active === "gemini" && hasGemini) {
+    return {
+      provider: "gemini",
+      model: GEMINI_MODEL,
+      isConfigured: true,
+      label: `Gemini (${GEMINI_MODEL}) Active`,
+    };
+  }
+  if (hasOpenAi) {
+    return {
+      provider: "openai",
+      model: "gpt-4o",
+      isConfigured: true,
+      label: "OpenAI (GPT-4o) Active",
+    };
+  }
+  return {
+    provider: "none",
+    model: "none",
+    isConfigured: false,
+    label: "Offline Catalog Mode",
+  };
+}
 
 // ─── Problem Parsing with Gemini ──────────────────────────────────────────────
 

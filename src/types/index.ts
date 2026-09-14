@@ -25,6 +25,12 @@ export interface Problem {
   constraints: string[];
   examples: Example[];
   tags: string[];
+  referenceSolution?: Record<LanguageKey, string>;
+  editorial?: {
+    approach: string;
+    timeComplexity: string;
+    spaceComplexity: string;
+  };
 }
 
 // ─── Execution Types ───────────────────────────────────────────────────────────

@@ -125,6 +125,18 @@ export const ParsedProblemSchema = z.object({
   spaceComplexityHint: z
     .string()
     .describe("Expected optimal space complexity, e.g. 'O(n)'"),
+
+  referenceSolution: StarterCodeSchema.optional().describe(
+    "Optimal reference solutions per language for editorial display"
+  ),
+
+  editorial: z
+    .object({
+      approach: z.string().describe("Explanation of the optimal approach"),
+      timeComplexity: z.string().describe("Big-O time complexity explanation"),
+      spaceComplexity: z.string().describe("Big-O space complexity explanation"),
+    })
+    .optional(),
 });
 
 // ─── API response types ───────────────────────────────────────────────────────

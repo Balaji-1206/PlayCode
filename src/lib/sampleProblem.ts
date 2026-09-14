@@ -1,4 +1,5 @@
 import type { Problem } from "@/types";
+import { TWO_SUM_REFERENCE_SOLUTIONS } from "@/lib/languages";
 
 // ─── Static sample problem ────────────────────────────────────────────────────
 // In Step 2, this will be replaced by the AI-parsed problem returned from
@@ -33,4 +34,10 @@ export const SAMPLE_PROBLEM: Problem = {
     },
   ],
   tags: ["Array", "Hash Table"],
+  referenceSolution: TWO_SUM_REFERENCE_SOLUTIONS,
+  editorial: {
+    approach: "One-pass Hash Table: As we iterate through the array, we compute the complement (target - num). If the complement already exists in our hash table, we return the pair of indices. Otherwise, we store the current number with its index.",
+    timeComplexity: "O(n) — Single traversal over the array of size n with O(1) hash map lookups.",
+    spaceComplexity: "O(n) — Auxiliary hash table storing up to n key-value pairs.",
+  },
 };

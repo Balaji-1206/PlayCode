@@ -9,20 +9,67 @@ const PYTHON_DEFAULT = `def two_sum(nums: list[int], target: int) -> list[int]:
     Given an array of integers nums and an integer target,
     return indices of the two numbers such that they add up to target.
     """
+    # Write your solution here
+    return []
+`;
+
+const CPP_DEFAULT = `#include <vector>
+using namespace std;
+
+class Solution {
+public:
+    vector<int> twoSum(vector<int>& nums, int target) {
+        // Write your solution here
+        return {};
+    }
+};
+`;
+
+const JAVA_DEFAULT = `import java.util.*;
+
+class Solution {
+    public int[] twoSum(int[] nums, int target) {
+        // Write your solution here
+        return new int[]{};
+    }
+}
+`;
+
+const JAVASCRIPT_DEFAULT = `/**
+ * @param {number[]} nums
+ * @param {number} target
+ * @return {number[]}
+ */
+function twoSum(nums, target) {
+    // Write your solution here
+    return [];
+}
+`;
+
+const GO_DEFAULT = `func twoSum(nums []int, target int) []int {
+    // Write your solution here
+    return []int{}
+}
+`;
+
+const RUST_DEFAULT = `impl Solution {
+    pub fn two_sum(nums: Vec<i32>, target: i32) -> Vec<i32> {
+        // Write your solution here
+        vec![]
+    }
+}
+`;
+
+export const TWO_SUM_REFERENCE_SOLUTIONS: Record<LanguageKey, string> = {
+  python: `def two_sum(nums: list[int], target: int) -> list[int]:
     seen = {}
     for i, num in enumerate(nums):
         complement = target - num
         if complement in seen:
             return [seen[complement], i]
         seen[num] = i
-    return []
-`;
-
-const CPP_DEFAULT = `#include <vector>
-#include <unordered_map>
-using namespace std;
-
-class Solution {
+    return []`,
+  cpp: `class Solution {
 public:
     vector<int> twoSum(vector<int>& nums, int target) {
         unordered_map<int, int> seen;
@@ -35,14 +82,10 @@ public:
         }
         return {};
     }
-};
-`;
-
-const JAVA_DEFAULT = `import java.util.HashMap;
-
-class Solution {
+};`,
+  java: `class Solution {
     public int[] twoSum(int[] nums, int target) {
-        HashMap<Integer, Integer> seen = new HashMap<>();
+        Map<Integer, Integer> seen = new HashMap<>();
         for (int i = 0; i < nums.length; i++) {
             int complement = target - nums[i];
             if (seen.containsKey(complement)) {
@@ -52,15 +95,8 @@ class Solution {
         }
         return new int[]{};
     }
-}
-`;
-
-const JAVASCRIPT_DEFAULT = `/**
- * @param {number[]} nums
- * @param {number} target
- * @return {number[]}
- */
-function twoSum(nums, target) {
+}`,
+  javascript: `function twoSum(nums, target) {
     const seen = new Map();
     for (let i = 0; i < nums.length; i++) {
         const complement = target - nums[i];
@@ -70,10 +106,8 @@ function twoSum(nums, target) {
         seen.set(nums[i], i);
     }
     return [];
-}
-`;
-
-const GO_DEFAULT = `func twoSum(nums []int, target int) []int {
+}`,
+  go: `func twoSum(nums []int, target int) []int {
     seen := make(map[int]int)
     for i, num := range nums {
         complement := target - num
@@ -83,10 +117,8 @@ const GO_DEFAULT = `func twoSum(nums []int, target int) []int {
         seen[num] = i
     }
     return nil
-}
-`;
-
-const RUST_DEFAULT = `use std::collections::HashMap;
+}`,
+  rust: `use std::collections::HashMap;
 
 impl Solution {
     pub fn two_sum(nums: Vec<i32>, target: i32) -> Vec<i32> {
@@ -100,8 +132,8 @@ impl Solution {
         }
         vec![]
     }
-}
-`;
+}`,
+};
 
 // ─── Language configuration map ───────────────────────────────────────────────
 // Add new languages here — no other file needs to change.

@@ -31,6 +31,7 @@ import EditorToolbar from "@/components/playground/EditorToolbar";
 import BottomPanel from "@/components/playground/BottomPanel";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import ProblemDirectoryModal from "@/components/modals/ProblemDirectoryModal";
+import EditorialModal from "@/components/modals/EditorialModal";
 
 import type { ExecutionResult, Problem, TestResult } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
@@ -58,6 +59,8 @@ function adaptParsedProblem(parsed: ParsedProblem): Problem {
     constraints: parsed.constraints,
     examples: parsed.examples,
     tags: parsed.tags,
+    referenceSolution: parsed.referenceSolution,
+    editorial: parsed.editorial,
   };
 }
 
@@ -183,6 +186,7 @@ export default function Playground() {
   const [isProblemMenuOpen, setIsProblemMenuOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isDirectoryModalOpen, setIsDirectoryModalOpen] = useState(false);
+  const [isEditorialOpen, setIsEditorialOpen] = useState(false);
 
   // Ctrl+K / Cmd+K listener for problem directory
   useEffect(() => {
@@ -541,6 +545,7 @@ export default function Playground() {
                 onFontSizeChange={setFontSize}
                 onToggleFullscreen={() => setHideProblemPanel((v) => !v)}
                 isFullscreen={hideProblempanel}
+                onOpenEditorial={() => setIsEditorialOpen(true)}
               />
               <div className="min-h-0 flex-1">
                 <CodeEditor
@@ -581,6 +586,7 @@ export default function Playground() {
             onFontSizeChange={setFontSize}
             onToggleFullscreen={() => {}}
             isFullscreen={false}
+            onOpenEditorial={() => setIsEditorialOpen(true)}
           />
           <div className="min-h-0 flex-1">
             <CodeEditor
@@ -685,6 +691,14 @@ export default function Playground() {
       <ProblemDirectoryModal
         isOpen={isDirectoryModalOpen}
         onClose={() => setIsDirectoryModalOpen(false)}
+        selectedLanguage={selectedLanguage}
+      />
+
+      {/* Editorial & Solution Modal */}
+      <EditorialModal
+        isOpen={isEditorialOpen}
+        onClose={() => setIsEditorialOpen(false)}
+        problem={displayProblem}
         selectedLanguage={selectedLanguage}
       />
     </div>

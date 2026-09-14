@@ -86,6 +86,31 @@ Output: false`,
 s consists of parentheses only '()[]{}'`,
   },
   {
+    label: "Merge Two Sorted Lists",
+    difficulty: "Easy",
+    tags: ["Linked List", "Recursion"],
+    timeComplexity: "O(n + m)",
+    statement: `You are given the heads of two sorted linked lists list1 and list2.
+
+Merge the two lists into one sorted list. The list should be made by splicing together the nodes of the first two lists.
+
+Return the head of the merged linked list.`,
+    examples: `Example 1:
+Input: list1 = [1,2,4], list2 = [1,3,4]
+Output: [1,1,2,3,4,4]
+
+Example 2:
+Input: list1 = [], list2 = []
+Output: []
+
+Example 3:
+Input: list1 = [], list2 = [0]
+Output: [0]`,
+    constraints: `The number of nodes in both lists is in the range [0, 50].
+-100 <= Node.val <= 100
+Both list1 and list2 are sorted in non-decreasing order.`,
+  },
+  {
     label: "Maximum Subarray",
     difficulty: "Medium",
     tags: ["Array", "Dynamic Programming"],
@@ -105,6 +130,46 @@ Input: nums = [5,4,-1,7,8]
 Output: 23`,
     constraints: `1 <= nums.length <= 10^5
 -10^4 <= nums[i] <= 10^4`,
+  },
+  {
+    label: "Binary Tree Inorder Traversal",
+    difficulty: "Easy",
+    tags: ["Tree", "DFS"],
+    timeComplexity: "O(n)",
+    statement: `Given the root of a binary tree, return the inorder traversal of its nodes' values.`,
+    examples: `Example 1:
+Input: root = [1,null,2,3]
+Output: [1,3,2]
+
+Example 2:
+Input: root = []
+Output: []
+
+Example 3:
+Input: root = [1]
+Output: [1]`,
+    constraints: `The number of nodes in the tree is in the range [0, 100].
+-100 <= Node.val <= 100`,
+  },
+  {
+    label: "Reverse Linked List",
+    difficulty: "Easy",
+    tags: ["Linked List", "Pointers"],
+    timeComplexity: "O(n)",
+    statement: `Given the head of a singly linked list, reverse the list, and return the reversed list.`,
+    examples: `Example 1:
+Input: head = [1,2,3,4,5]
+Output: [5,4,3,2,1]
+
+Example 2:
+Input: head = [1,2]
+Output: [2,1]
+
+Example 3:
+Input: head = []
+Output: []`,
+    constraints: `The number of nodes in the list is the range [0, 5000].
+-5000 <= Node.val <= 5000`,
   },
 ];
 
@@ -134,6 +199,38 @@ export default function ProblemParser() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [parseStepIndex, setParseStepIndex] = useState(0);
+  const [providerInfo, setProviderInfo] = useState<{
+    providerName: string;
+    isAiActive: boolean;
+  }>({
+    providerName: "Gemini 2.5 Flash Active",
+    isAiActive: true,
+  });
+
+  const isFormValid = statement.trim().length >= 20;
+
+  // Fetch active AI provider status
+  useEffect(() => {
+    async function fetchStatus() {
+      try {
+        const res = await fetch("/api/provider-status");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ai?.status === "active") {
+            const modelName = data.ai.model === "gemini-2.5-flash"
+              ? "Gemini 2.5 Flash Active"
+              : `${data.ai.model} Active`;
+            setProviderInfo({ providerName: modelName, isAiActive: true });
+          } else {
+            setProviderInfo({ providerName: "Offline Catalog Active", isAiActive: false });
+          }
+        }
+      } catch {
+        // Retain optimistic default
+      }
+    }
+    fetchStatus();
+  }, []);
 
   const isFormValid = statement.trim().length >= 20;
 
@@ -301,8 +398,8 @@ export default function ProblemParser() {
         {/* ── Top Bar: Health Pill, Theme Toggle, and Quick Playground Link ── */}
         <div className="mb-6 flex w-full items-center justify-between">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 dark:border-emerald-800/60 bg-white/90 dark:bg-slate-900/90 px-3.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 shadow-xs backdrop-blur-md">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Gemini 3.6 Flash Active</span>
+            <span className={`h-2 w-2 rounded-full ${providerInfo.isAiActive ? "bg-emerald-500 animate-pulse" : "bg-blue-500"}`} />
+            <span>{providerInfo.providerName}</span>
             <span className="h-1 w-1 rounded-full bg-emerald-300 dark:bg-emerald-600" />
             <span className="font-normal text-slate-500 dark:text-slate-400">Zero-Quota Caching</span>
           </div>
@@ -343,7 +440,7 @@ export default function ProblemParser() {
             <span className="text-[11px] text-slate-400">Click to load or test instantly</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {EXAMPLES.map((ex) => (
               <div
                 key={ex.label}
@@ -634,7 +731,7 @@ e.g. Given an array of integers nums and an integer target, return indices of th
                 <span>{PARSE_STEPS[parseStepIndex]}</span>
               </div>
               <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                Powered by high-speed Gemini 3.6 Flash · Instant caching active
+                Powered by high-speed {providerInfo.providerName} · Instant caching active
               </p>
             </div>
           )}
