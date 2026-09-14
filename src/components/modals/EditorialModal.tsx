@@ -20,13 +20,10 @@ export default function EditorialModal({
   selectedLanguage: initialLanguage,
 }: EditorialModalProps) {
   const { setCode, setLanguage } = usePlaygroundStore();
-  const [activeLang, setActiveLang] = useState<LanguageKey>(initialLanguage);
+  const [selectedLang, setSelectedLang] = useState<LanguageKey | null>(null);
+  const activeLang = selectedLang ?? initialLanguage;
   const [isRevealed, setIsRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    setActiveLang(initialLanguage);
-  }, [initialLanguage]);
 
   // Close on Escape
   useEffect(() => {
@@ -151,7 +148,7 @@ export default function EditorialModal({
                 {(Object.keys(LANGUAGES) as LanguageKey[]).map((lang) => (
                   <button
                     key={lang}
-                    onClick={() => setActiveLang(lang)}
+                    onClick={() => setSelectedLang(lang)}
                     className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
                       activeLang === lang
                         ? "bg-blue-600 text-white font-bold shadow-xs"

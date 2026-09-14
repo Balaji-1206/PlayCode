@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Lightbulb,
-  Sparkles,
   TrendingUp,
   Cpu,
   ArrowRight,

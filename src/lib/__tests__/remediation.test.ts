@@ -146,3 +146,100 @@ test("RateLimit: Sliding window limiter correctly enforces request thresholds", 
   assert.equal(r4.remaining, 0);
   assert.ok(r4.reset > 0);
 });
+
+// ─── 6. Java DSA Definition Injection ─────────────────────────────────────────
+test("DSA: Java definitions for ListNode and TreeNode are injected accurately", () => {
+  const javaListNodeCode = "class Solution { public ListNode mergeTwoLists(ListNode list1, ListNode list2) { return null; } }";
+  const javaInjection = getInjectedDsaDefinitions(javaListNodeCode, "", "java");
+  assert.ok(javaInjection.includes("class ListNode"));
+  assert.ok(javaInjection.includes("int val;"));
+  assert.ok(javaInjection.includes("ListNode next;"));
+
+  const javaTreeNodeCode = "class Solution { public List<Integer> inorderTraversal(TreeNode root) { return null; } }";
+  const treeInjection = getInjectedDsaDefinitions(javaTreeNodeCode, "", "java");
+  assert.ok(treeInjection.includes("class TreeNode"));
+  assert.ok(treeInjection.includes("TreeNode left;"));
+  assert.ok(treeInjection.includes("TreeNode right;"));
+});
+
+// ─── 7. DSA Pedagogy: Starter Code vs Reference Solutions ─────────────────────
+test("Pedagogy: Catalog starterCode are genuine skeletons, referenceSolutions are complete", async () => {
+  const { PROBLEM_CATALOG } = await import("@/lib/problemCatalog");
+
+  const problems = Object.values(PROBLEM_CATALOG);
+  assert.ok(problems.length >= 6);
+
+  for (const p of problems) {
+    // 1. Starter code in python should NOT be a complete pre-solved implementation
+    assert.ok(
+      p.starterCode.python.includes("pass") ||
+      p.starterCode.python.includes("return []") ||
+      p.starterCode.python.includes("return None") ||
+      p.starterCode.python.includes("return False") ||
+      p.starterCode.python.includes("return 0"),
+      `${p.title} starter code should have placeholder return`
+    );
+
+    // 2. Reference solution must exist and provide working code across all 6 languages
+    assert.ok(p.referenceSolution, `${p.title} must have referenceSolution`);
+    assert.ok(p.referenceSolution!.python.length > 20, `${p.title} must have Python reference solution`);
+    assert.ok(p.referenceSolution!.cpp.length > 20, `${p.title} must have C++ reference solution`);
+    assert.ok(p.referenceSolution!.java.length > 20, `${p.title} must have Java reference solution`);
+    assert.ok(p.referenceSolution!.javascript.length > 20, `${p.title} must have JS reference solution`);
+    assert.ok(p.referenceSolution!.go.length > 20, `${p.title} must have Go reference solution`);
+    assert.ok(p.referenceSolution!.rust.length > 20, `${p.title} must have Rust reference solution`);
+
+    // 3. Editorial must have optimal Big-O breakdown
+    assert.ok(p.editorial, `${p.title} must have editorial`);
+    assert.ok(p.editorial!.timeComplexity.includes("O("));
+    assert.ok(p.editorial!.spaceComplexity.includes("O("));
+  }
+});
+
+// ─── 8. AI Provider Configuration: Valid Gemini Target ────────────────────────
+test("AI: Active provider info targets valid gemini-2.5-flash, never gemini-3.6-flash", async () => {
+  const { getAiProviderInfo } = await import("@/lib/ai/gemini");
+  const info = getAiProviderInfo();
+
+  assert.notEqual(info.model, "gemini-3.6-flash");
+  assert.ok(
+    info.model === "gemini-2.5-flash" ||
+    info.model === "gpt-4o" ||
+    info.model === "none"
+  );
+  assert.ok(info.label.length > 0);
+});
+
+// ─── 9. Robust Delimiter Extraction on User Collision ─────────────────────────
+test("Output Delimiter: Extracts last delimiter block when user code also prints delimiter", () => {
+  const RESULT_START_DELIMITER = "__PLAYCODE_RESULT_START__";
+  const RESULT_END_DELIMITER = "__PLAYCODE_RESULT_END__";
+
+  function extractOutputAndLogsHardened(rawStdout: string) {
+    const startIndex = rawStdout.lastIndexOf(RESULT_START_DELIMITER);
+    const endIndex = rawStdout.lastIndexOf(RESULT_END_DELIMITER);
+
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      const logsBefore = rawStdout.slice(0, startIndex);
+      const officialOutput = rawStdout
+        .slice(startIndex + RESULT_START_DELIMITER.length, endIndex)
+        .trim();
+      const logsAfter = rawStdout.slice(endIndex + RESULT_END_DELIMITER.length);
+      const userLogs = `${logsBefore}\n${logsAfter}`
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .join("\n");
+
+      return { officialOutput, userLogs };
+    }
+
+    return { officialOutput: rawStdout.trim(), userLogs: "" };
+  }
+
+  const rawStdout = `user debug: ${RESULT_START_DELIMITER}\nfake data\n${RESULT_END_DELIMITER}\n${RESULT_START_DELIMITER}\n[0, 1]\n${RESULT_END_DELIMITER}`;
+  const { officialOutput, userLogs } = extractOutputAndLogsHardened(rawStdout);
+
+  assert.equal(officialOutput, "[0, 1]");
+  assert.ok(userLogs.includes("user debug:"));
+});

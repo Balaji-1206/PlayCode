@@ -19,8 +19,8 @@ interface RateLimitResult {
 // In-memory store: Map<key, timestamp[]>
 const memoryStore = new Map<string, number[]>();
 
-// Cleanup stale timestamps periodically
-setInterval(() => {
+// Cleanup stale timestamps periodically without keeping Node event loop alive
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamps] of memoryStore.entries()) {
     const valid = timestamps.filter((t) => now - t < 300_000); // 5 min max window
@@ -31,6 +31,10 @@ setInterval(() => {
     }
   }
 }, 60_000);
+
+if (typeof cleanupTimer.unref === "function") {
+  cleanupTimer.unref();
+}
 
 function getClientIdentifier(req: NextRequest): string {
   const forwarded = req.headers.get("x-forwarded-for");

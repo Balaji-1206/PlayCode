@@ -207,8 +207,6 @@ export default function ProblemParser() {
     isAiActive: true,
   });
 
-  const isFormValid = statement.trim().length >= 20;
-
   // Fetch active AI provider status
   useEffect(() => {
     async function fetchStatus() {
