@@ -11,7 +11,6 @@ import {
   ClipboardPaste,
   Trash2,
   Wand2,
-  Play,
   Flame,
   Check,
 } from "lucide-react";
@@ -337,44 +336,6 @@ export default function ProblemParser() {
     showToast(`Loaded ${ex.label} into form`);
   };
 
-  // ── Instant launch challenge ──────────────────────────────────────────────
-
-  const launchInstantChallenge = async (ex: CatalogExample) => {
-    fillExample(ex);
-    setIsParsing(true);
-    setParseError(null);
-
-    try {
-      const response = await fetch("/api/problems/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          problemStatement: ex.statement.trim(),
-          examples: ex.examples.trim(),
-          constraints: ex.constraints.trim(),
-        }),
-      });
-
-      const data = (await response.json()) as {
-        problem?: ParsedProblem;
-        problemSessionId?: string;
-        error?: string;
-      };
-
-      if (!response.ok) throw new Error(data.error ?? `Server error: ${response.status}`);
-      if (!data.problem || !data.problemSessionId) {
-        throw new Error("Could not initialize problem session.");
-      }
-
-      loadParsedProblem(data.problem, language, data.problemSessionId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "An unexpected error occurred.";
-      setParseError(message);
-    } finally {
-      setIsParsing(false);
-    }
-  };
-
   // ── Toolbar Actions: Paste, Clear, Format ─────────────────────────────────
 
   const handlePasteClipboard = async () => {
@@ -476,11 +437,9 @@ export default function ProblemParser() {
       <div className="relative z-10 mx-auto flex min-h-full max-w-4xl flex-col items-center px-4 py-8 sm:px-6 lg:py-12">
         {/* ── Top Bar: Health Pill, Theme Toggle, and Quick Playground Link ── */}
         <div className="mb-6 flex w-full items-center justify-between">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 dark:border-emerald-800/60 bg-white/90 dark:bg-slate-900/90 px-3.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 shadow-xs backdrop-blur-md">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-3.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-2xs backdrop-blur-md">
             <span className={`h-2 w-2 rounded-full ${providerInfo.isAiActive ? "bg-emerald-500 animate-pulse" : "bg-blue-500"}`} />
             <span>{providerInfo.providerName}</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300 dark:bg-emerald-600" />
-            <span className="font-normal text-slate-500 dark:text-slate-400">Zero-Quota Caching</span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -509,70 +468,36 @@ export default function ProblemParser() {
           </p>
         </div>
 
-        {/* ── Quick Challenge Cards Gallery ── */}
-        <div className="mb-6 w-full">
-          <div className="mb-2.5 flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+        {/* ── Quick Templates (Clean, horizontal chips) ── */}
+        <div className="mb-4 w-full">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <Flame className="h-3.5 w-3.5 text-amber-500" />
-              Instant Start Challenges (0 API Quota Used)
+              Quick Templates
             </span>
-            <span className="text-[11px] text-slate-400">Click to load or test instantly</span>
+            <span className="text-[11px] text-slate-400">Click to fill form</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             {EXAMPLES.map((ex) => (
-              <div
+              <button
                 key={ex.label}
-                className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-[#263244] bg-white/85 dark:bg-[#111827]/90 p-3.5 shadow-xs backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-400 dark:hover:border-blue-500/50 hover:bg-white dark:hover:bg-[#172033] hover:shadow-md"
+                type="button"
+                onClick={() => fillExample(ex)}
+                className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-2xs transition-all hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
+                title={`Difficulty: ${ex.difficulty} · ${ex.tags.join(", ")}`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                      {ex.label}
-                    </h3>
-                    <span
-                      className={`rounded-full px-2 py-0.2 text-[10px] font-bold uppercase ${
-                        ex.difficulty === "Easy"
-                          ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
-                          : "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/50"
-                      }`}
-                    >
-                      {ex.difficulty}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {ex.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-md bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-400 font-medium"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                    <span className="rounded-md bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 text-[10px] text-blue-700 dark:text-blue-400 font-mono font-medium">
-                      {ex.timeComplexity}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    onClick={() => fillExample(ex)}
-                    className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 transition-colors hover:bg-white dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 cursor-pointer"
-                  >
-                    Use in Form
-                  </button>
-                  <button
-                    onClick={() => launchInstantChallenge(ex)}
-                    className="flex items-center justify-center gap-1 rounded-lg bg-blue-600 dark:bg-blue-500 px-3 py-1 text-[11px] font-semibold text-white shadow-xs transition-all hover:bg-blue-700 dark:hover:bg-blue-600 active:scale-95 cursor-pointer"
-                    title="Launch directly into Playground"
-                  >
-                    <Play className="h-3 w-3 fill-current" />
-                    <span>Launch</span>
-                  </button>
-                </div>
-              </div>
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    ex.difficulty === "Easy"
+                      ? "bg-emerald-500"
+                      : ex.difficulty === "Medium"
+                      ? "bg-amber-500"
+                      : "bg-rose-500"
+                  }`}
+                />
+                <span>{ex.label}</span>
+              </button>
             ))}
           </div>
         </div>

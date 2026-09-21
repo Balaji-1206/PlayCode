@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 
 export default function ThemeToggle() {
   const { theme, toggleTheme, setTheme } = usePlaygroundStore();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     try {
       const stored = localStorage.getItem("dsa-theme");
       if (stored === "dark" || stored === "light") {
@@ -18,7 +20,7 @@ export default function ThemeToggle() {
     } catch {}
   }, [setTheme]);
 
-  const isDark = theme === "dark";
+  const isDark = mounted ? theme === "dark" : false;
 
   return (
     <button
