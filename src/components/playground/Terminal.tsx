@@ -16,6 +16,9 @@ import {
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import TestCaseTabs from "@/components/playground/TestCaseTabs";
 import VerdictBanner from "@/components/playground/VerdictBanner";
+import OutputDiffViewer from "@/components/playground/OutputDiffViewer";
+import LatencyBreakdown from "@/components/playground/LatencyBreakdown";
+import { getExecutionSpeedTier } from "@/lib/diffUtils";
 import type { TestResult, FailedHiddenCase } from "@/types";
 
 // ─── Reusable Copy Button ────────────────────────────────────────────────────
@@ -63,7 +66,7 @@ function TestCaseDetail({
   onUseAsCustomInput,
 }: {
   result: TestResult;
-  onUseAsCustomInput?: (input: string) => void;
+  onUseAsCustomInput?: (input: string, expected?: string) => void;
 }) {
   const isPassing = result.status === "pass";
   const isError = result.status === "error";
@@ -91,10 +94,22 @@ function TestCaseDetail({
           {isPassing ? "Passed" : isError ? "Error" : "Failed"}
         </span>
         {result.executionTime !== undefined && result.executionTime > 0 && (
-          <span className="ml-auto flex items-center gap-1 text-slate-400 dark:text-slate-500">
-            <Clock className="h-3 w-3" />
-            {result.executionTime} ms
-          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {(() => {
+              const tier = getExecutionSpeedTier(result.executionTime);
+              return (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${tier.badgeClass}`}
+                >
+                  {tier.label}
+                </span>
+              );
+            })()}
+            <span className="flex items-center gap-1 text-slate-400 dark:text-slate-500 font-mono text-[11px]">
+              <Clock className="h-3 w-3" />
+              {result.executionTime} ms
+            </span>
+          </div>
         )}
       </div>
 
@@ -108,7 +123,7 @@ function TestCaseDetail({
             {onUseAsCustomInput && (
               <button
                 type="button"
-                onClick={() => onUseAsCustomInput(result.input)}
+                onClick={() => onUseAsCustomInput(result.input, result.expected)}
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
                 title="Load into Custom Test tab"
               >
@@ -122,32 +137,12 @@ function TestCaseDetail({
         <pre className="whitespace-pre-wrap text-slate-800 dark:text-slate-200">{result.input}</pre>
       </div>
 
+      {/* Output / Diff Inspection */}
       {!isPassing && (
-        <>
-          {/* Expected */}
-          <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-3 shadow-2xs">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                Expected Output
-              </p>
-              <CopyButton text={result.expected} />
-            </div>
-            <pre className="whitespace-pre-wrap text-emerald-700 dark:text-emerald-300 font-semibold">{result.expected}</pre>
-          </div>
-
-          {/* Received */}
-          <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 p-3 shadow-2xs">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-                Your Output
-              </p>
-              <CopyButton text={result.received || ""} />
-            </div>
-            <pre className="whitespace-pre-wrap text-red-700 dark:text-red-300 font-semibold">
-              {result.received || "(no output)"}
-            </pre>
-          </div>
-        </>
+        <OutputDiffViewer
+          expected={result.expected}
+          received={result.received || ""}
+        />
       )}
 
       {isPassing && (
@@ -188,7 +183,7 @@ function HiddenTestSummary({
   total: number;
   passed: number;
   failedCase?: FailedHiddenCase | null;
-  onUseAsCustomInput?: (input: string) => void;
+  onUseAsCustomInput?: (input: string, expected?: string) => void;
 }) {
   const [showHiddenCase, setShowHiddenCase] = useState(false);
   const allPassed = passed === total;
@@ -279,7 +274,7 @@ function HiddenTestSummary({
                         {onUseAsCustomInput && (
                           <button
                             type="button"
-                            onClick={() => onUseAsCustomInput(failedCase.input)}
+                            onClick={() => onUseAsCustomInput(failedCase.input, failedCase.expected)}
                             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
                             title="Load into Custom Test tab"
                           >
@@ -295,31 +290,11 @@ function HiddenTestSummary({
                     </pre>
                   </div>
 
-                  <div className="grid gap-2.5 sm:grid-cols-2">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                          Your Output
-                        </span>
-                        <CopyButton text={failedCase.received || ""} />
-                      </div>
-                      <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 p-2.5 font-mono text-xs text-rose-700 dark:text-rose-300 font-semibold">
-                        {failedCase.received || "(no output)"}
-                      </pre>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                          Expected Output
-                        </span>
-                        <CopyButton text={failedCase.expected} />
-                      </div>
-                      <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30 p-2.5 font-mono text-xs text-emerald-700 dark:text-emerald-300 font-semibold">
-                        {failedCase.expected}
-                      </pre>
-                    </div>
-                  </div>
+                  {/* Token Diff Inspector for Revealed Hidden Case */}
+                  <OutputDiffViewer
+                    expected={failedCase.expected}
+                    received={failedCase.received || ""}
+                  />
 
                   {failedCase.stderr && (
                     <div>
@@ -448,8 +423,11 @@ export default function Terminal() {
 
   const activeResult = standardResults[selectedCase];
 
-  const handleUseAsCustomInput = (inp: string) => {
+  const handleUseAsCustomInput = (inp: string, exp?: string) => {
     setCustomInput(inp);
+    if (exp !== undefined) {
+      setCustomExpected(exp);
+    }
     setIsCustomTestActive(true);
   };
 
@@ -535,6 +513,18 @@ export default function Terminal() {
                   {output.stderr}
                 </pre>
               </div>
+            )}
+
+            {/* Aggregate Latency Telemetry Breakdown */}
+            {standardResults.length > 1 && (
+              <LatencyBreakdown
+                results={standardResults}
+                selectedIndex={selectedCase}
+                onSelectIndex={(idx) => {
+                  setIsCustomTestActive(false);
+                  setSelectedCase(idx);
+                }}
+              />
             )}
 
             {activeResult && (

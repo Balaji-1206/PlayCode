@@ -12,6 +12,8 @@ export default function ThemeToggle() {
       const stored = localStorage.getItem("dsa-theme");
       if (stored === "dark" || stored === "light") {
         setTheme(stored);
+      } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        setTheme("dark");
       }
     } catch {}
   }, [setTheme]);

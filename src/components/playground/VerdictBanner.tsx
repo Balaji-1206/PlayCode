@@ -2,6 +2,7 @@
 
 import { CheckCircle2, XCircle, AlertTriangle, Zap } from "lucide-react";
 import type { ExecutionResult } from "@/types";
+import { getExecutionSpeedTier } from "@/lib/diffUtils";
 
 // ─── Verdict config ───────────────────────────────────────────────────────────
 
@@ -107,28 +108,57 @@ export default function VerdictBanner({ result }: VerdictBannerProps) {
 
   const config = VERDICT_CONFIGS[verdict];
   const bannerKey = `${result.status}-${result.executionTime}-${result.hiddenSummary?.passed ?? 0}`;
+  const speedTier = result.executionTime > 0 ? getExecutionSpeedTier(result.executionTime) : null;
 
   return (
     <div
       key={bannerKey}
-      className={`flex items-center gap-3 rounded-xl border px-4 py-2.5 shadow-2xs ${config.containerClass} ${config.animationClass}`}
+      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-2xs ${config.containerClass} ${config.animationClass}`}
     >
-      {config.icon}
-      <div>
-        <p className="text-sm font-bold">{config.label}</p>
-        <p className="text-xs opacity-80">{config.sublabel}</p>
+      <div className="flex items-center gap-3">
+        {config.icon}
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold">{config.label}</p>
+            {speedTier && (
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${speedTier.badgeClass}`}>
+                {speedTier.label}
+              </span>
+            )}
+          </div>
+          <p className="text-xs opacity-80 mt-0.5">{config.sublabel}</p>
+        </div>
       </div>
 
-      {result.hiddenSummary && (
-        <div className="ml-auto text-right text-xs opacity-80 font-mono">
-          <p>
-            Hidden: {result.hiddenSummary.passed}/{result.hiddenSummary.total}
-          </p>
-          {result.executionTime > 0 && (
-            <p>{result.executionTime} ms</p>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-4 text-xs font-mono shrink-0">
+        {result.hiddenSummary && (
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 px-2.5 py-1 border border-black/10 dark:border-white/10 text-right">
+            <span className="text-[10px] uppercase tracking-wider block opacity-70">Hidden Tests</span>
+            <span className="font-semibold">{result.hiddenSummary.passed}/{result.hiddenSummary.total} passed</span>
+          </div>
+        )}
+
+        {result.executionTime > 0 && (
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 px-2.5 py-1 border border-black/10 dark:border-white/10 min-w-[110px]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wider opacity-70">Runtime</span>
+              <span className="font-bold">{result.executionTime} ms</span>
+            </div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  (speedTier?.percentOfBudget ?? 0) >= 80
+                    ? "bg-rose-500"
+                    : (speedTier?.percentOfBudget ?? 0) >= 40
+                    ? "bg-amber-500"
+                    : "bg-emerald-500"
+                }`}
+                style={{ width: `${Math.max(4, speedTier?.percentOfBudget ?? 0)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

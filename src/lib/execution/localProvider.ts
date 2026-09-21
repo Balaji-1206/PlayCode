@@ -1,8 +1,7 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import os from "os";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import type {
   ExecutionProvider,
   ExecutionRequest,
@@ -37,6 +36,14 @@ function cleanExpiredBinaries() {
   }
 }
 
+function getLocalBuildDir(subPath: string): string {
+  // Use .playcode_cache within project to prevent Windows Device Guard/AppLocker from blocking execution in os.tmpdir()
+  const baseDir = path.join(process.cwd(), ".playcode_cache");
+  const fullDir = path.join(baseDir, subPath);
+  fs.mkdirSync(fullDir, { recursive: true });
+  return fullDir;
+}
+
 export class LocalProvider implements ExecutionProvider {
   readonly name = "Local";
 
@@ -55,7 +62,6 @@ export class LocalProvider implements ExecutionProvider {
 
     // ── C++ (compiled with caching) ──────────────────────────────────────────
     if (lang === "cpp") {
-      const { createHash } = await import("crypto");
       const hash = createHash("sha256").update(request.code).digest("hex");
       const cached = compilationCache.get(hash);
 
@@ -63,13 +69,18 @@ export class LocalProvider implements ExecutionProvider {
         return await this.runProcess(cached.binaryPath, [], request.stdin, cached.dir, timeoutMs);
       }
 
-      const buildDir = path.join(os.tmpdir(), `playcode_cpp_${hash.slice(0, 12)}`);
-      fs.mkdirSync(buildDir, { recursive: true });
+      const buildDir = getLocalBuildDir(`cpp_${hash.slice(0, 12)}`);
       const srcPath = path.join(buildDir, "solution.cpp");
-      const outPath = path.join(buildDir, "solution.exe");
+      const outPath = path.join(buildDir, process.platform === "win32" ? "solution.exe" : "solution");
       fs.writeFileSync(srcPath, request.code, "utf-8");
 
-      const compileRes = await this.runProcess("g++", [srcPath, "-O2", "-o", outPath], "", buildDir, 10000);
+      const compileRes = await this.runProcess(
+        "g++",
+        [srcPath, "-O2", "-static-libgcc", "-static-libstdc++", "-o", outPath],
+        "",
+        buildDir,
+        10000
+      );
       if (compileRes.exitCode !== 0) {
         return {
           stdout: "",
@@ -92,17 +103,31 @@ export class LocalProvider implements ExecutionProvider {
 
     // ── Java (compiled with caching) ─────────────────────────────────────────
     if (lang === "java") {
-      const { createHash } = await import("crypto");
       const hash = createHash("sha256").update(request.code).digest("hex");
       const cached = compilationCache.get(hash);
 
-      if (cached && fs.existsSync(cached.binaryPath)) {
-        return await this.runProcess("java", ["-cp", cached.dir, "Main"], request.stdin, cached.dir, timeoutMs);
+      // In Java, if a public class exists, the file MUST be named after it.
+      // Otherwise, find the class that defines public static void main.
+      let mainClassName = "Main";
+      const publicClassMatch = request.code.match(/public\s+class\s+([A-Za-z0-9_]+)/);
+      if (publicClassMatch) {
+        mainClassName = publicClassMatch[1];
+      } else {
+        const classMatches = [...request.code.matchAll(/class\s+([A-Za-z0-9_]+)[^{]*\{([\s\S]*?)(?=\n\s*(?:public\s+)?class|\s*$)/g)];
+        for (const cm of classMatches) {
+          if (cm[2] && cm[2].includes("public static void main")) {
+            mainClassName = cm[1];
+            break;
+          }
+        }
       }
 
-      const buildDir = path.join(os.tmpdir(), `playcode_java_${hash.slice(0, 12)}`);
-      fs.mkdirSync(buildDir, { recursive: true });
-      const srcPath = path.join(buildDir, "Main.java");
+      if (cached && fs.existsSync(cached.binaryPath)) {
+        return await this.runProcess("java", ["-cp", cached.dir, mainClassName], request.stdin, cached.dir, timeoutMs);
+      }
+
+      const buildDir = getLocalBuildDir(`java_${hash.slice(0, 12)}`);
+      const srcPath = path.join(buildDir, `${mainClassName}.java`);
       fs.writeFileSync(srcPath, request.code, "utf-8");
 
       const compileRes = await this.runProcess("javac", [srcPath], "", buildDir, 10000);
@@ -118,18 +143,17 @@ export class LocalProvider implements ExecutionProvider {
       }
 
       compilationCache.set(hash, {
-        binaryPath: path.join(buildDir, "Main.class"),
+        binaryPath: path.join(buildDir, `${mainClassName}.class`),
         dir: buildDir,
         expiresAt: Date.now() + 10 * 60 * 1000,
       });
 
-      return await this.runProcess("java", ["-cp", buildDir, "Main"], request.stdin, buildDir, timeoutMs);
+      return await this.runProcess("java", ["-cp", buildDir, mainClassName], request.stdin, buildDir, timeoutMs);
     }
 
     // ── Scripting languages (temp file per run) ──────────────────────────────
     const id = randomUUID();
-    const tempDir = path.join(os.tmpdir(), `playcode_${id}`);
-    fs.mkdirSync(tempDir, { recursive: true });
+    const tempDir = getLocalBuildDir(`script_${id}`);
 
     try {
       if (lang === "python") {
@@ -144,7 +168,14 @@ export class LocalProvider implements ExecutionProvider {
         return await this.runProcess("node", [filePath], request.stdin, tempDir, timeoutMs);
       }
 
-      throw new Error(`Local execution is not supported for ${lang}. Please install runtime or configure an external provider.`);
+      return {
+        stdout: "",
+        stderr: `Local runtime for "${lang}" is not installed or configured on this machine. Please install ${lang} or set EXECUTION_PROVIDER=piston in .env.local.`,
+        exitCode: 1,
+        timedOut: false,
+        executionTime: Date.now() - startTime,
+        memoryMb: 0,
+      };
     } finally {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -168,24 +199,57 @@ export class LocalProvider implements ExecutionProvider {
       const procStart = Date.now();
 
       // Build a minimal, sanitized environment for local execution.
-      // NEVER leak API keys (GEMINI_API_KEY, OPENAI_API_KEY) or host secrets.
+      // Prepend compiler directories (e.g. MSYS2 MinGW) to PATH so subtools and DLLs resolve.
+      const msysPaths = ["C:\\msys64\\ucrt64\\bin", "C:\\msys64\\mingw64\\bin"];
+      const detectedExtra = msysPaths.filter((p) => {
+        try {
+          return fs.existsSync(/*turbopackIgnore: true*/ p);
+        } catch {
+          return false;
+        }
+      });
+      const extraPathStr = [process.env.CXX_COMPILER_PATH, ...detectedExtra]
+        .filter(Boolean)
+        .join(process.platform === "win32" ? ";" : ":");
+
       const sanitizedEnv: NodeJS.ProcessEnv = {
-        PATH: process.env.CXX_COMPILER_PATH
-          ? `${process.env.CXX_COMPILER_PATH};${process.env.PATH ?? ""}`
+        PATH: extraPathStr
+          ? `${extraPathStr}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`
           : process.env.PATH ?? "",
+        PATHEXT: process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD",
         SYSTEMROOT: process.env.SYSTEMROOT ?? "",
         WINDIR: process.env.WINDIR ?? "",
         TEMP: cwd,
         TMP: cwd,
+        SystemDrive: process.env.SystemDrive ?? "C:",
+        USERPROFILE: process.env.USERPROFILE ?? "",
+        LOCALAPPDATA: process.env.LOCALAPPDATA ?? "",
+        APPDATA: process.env.APPDATA ?? "",
+        COMSPEC: process.env.COMSPEC ?? "cmd.exe",
+        ALLUSERSPROFILE: process.env.ALLUSERSPROFILE ?? "",
+        ProgramData: process.env.ProgramData ?? "",
         NODE_ENV: "development",
       };
 
-      const child = spawn(cmd, args, {
-        cwd,
-        windowsHide: true,
-        env: sanitizedEnv,
-        stdio: "pipe",
-      });
+      let child;
+      try {
+        child = spawn(cmd, args, {
+          cwd,
+          windowsHide: true,
+          env: sanitizedEnv,
+          stdio: "pipe",
+        });
+      } catch (spawnErr) {
+        const msg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+        return resolve({
+          stdout: "",
+          stderr: `Failed to spawn process "${cmd}": ${msg}`,
+          exitCode: 1,
+          timedOut: false,
+          executionTime: Date.now() - procStart,
+          memoryMb: 0,
+        });
+      }
 
       const timer = setTimeout(() => {
         timedOut = true;

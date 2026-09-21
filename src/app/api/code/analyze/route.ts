@@ -22,7 +22,9 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 // ─── OpenAI client ────────────────────────────────────────────────────────────
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient(): OpenAI {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing" });
+}
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -133,6 +135,7 @@ Analyze this solution thoroughly.`;
 
   if (hasOpenAi) {
     try {
+      const openai = getOpenAIClient();
       const completion = await openai.chat.completions.parse({
         model: "gpt-4o-2024-08-06",
         messages: [

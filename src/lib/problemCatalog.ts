@@ -1,6 +1,8 @@
 import type { ParsedProblem } from "@/lib/schemas/problem";
+import { JUSPAY_PROBLEMS } from "@/lib/juspayProblems";
 
 export const PROBLEM_CATALOG: Record<string, ParsedProblem> = {
+  ...JUSPAY_PROBLEMS,
   "valid-parentheses": {
     title: "Valid Parentheses",
     difficulty: "Easy",
@@ -1855,6 +1857,43 @@ fn main() {
 
 export function findMatchingCatalogProblem(statement: string, extra = ""): ParsedProblem | null {
   const combined = `${statement} ${extra}`.toLowerCase();
+
+  // 1. Direct key and title checks against all catalog entries
+  for (const [key, problem] of Object.entries(PROBLEM_CATALOG)) {
+    const titleLower = problem.title.toLowerCase();
+    if (combined.includes(titleLower) || combined.includes(key)) {
+      return problem;
+    }
+  }
+
+  // 2. Specific Juspay problem keyword matching
+  if (
+    combined.includes("closest node") ||
+    combined.includes("meeting node") ||
+    combined.includes("closest meeting") ||
+    (combined.includes("node1") && combined.includes("node2") && combined.includes("edges"))
+  ) {
+    return PROBLEM_CATALOG["closest-meeting-node"];
+  }
+
+  if (
+    combined.includes("largest sum cycle") ||
+    combined.includes("sum cycle") ||
+    (combined.includes("cycle") && combined.includes("edge[i]") && combined.includes("maximum sum")) ||
+    (combined.includes("sum of node values belonging to a cycle"))
+  ) {
+    return PROBLEM_CATALOG["largest-sum-cycle"];
+  }
+
+  if (
+    combined.includes("highest edge score") ||
+    combined.includes("edge score") ||
+    (combined.includes("edge") && combined.includes("score"))
+  ) {
+    return PROBLEM_CATALOG["highest-edge-score"];
+  }
+
+  // 3. Domain heuristics for core catalog problems
   if (
     combined.includes("parenthes") ||
     combined.includes("bracket") ||

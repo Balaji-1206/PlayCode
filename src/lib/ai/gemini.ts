@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, type GenerativeModel } from "@google/generative-ai";
 import { ParsedProblemSchema, type ParsedProblem } from "@/lib/schemas/problem";
 import { CodeAnalysisSchema, type CodeAnalysis } from "@/lib/schemas/analysis";
 import {
@@ -136,6 +136,22 @@ export function safeJsonParse<T>(raw: string): T {
 }
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_TIMEOUT_MS = 12000;
+
+async function generateContentWithTimeout(model: GenerativeModel, prompt: string, timeoutMs = GEMINI_TIMEOUT_MS) {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Gemini API request timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([model.generateContent(prompt), timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
 
 export interface AiProviderInfo {
   provider: "gemini" | "openai" | "none";
@@ -251,7 +267,7 @@ You MUST output ONLY valid JSON matching this exact structure:
 
 ${userMessage}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await generateContentWithTimeout(model, prompt);
   const text = result.response.text();
   const raw = safeJsonParse<unknown>(text);
 
@@ -325,7 +341,7 @@ You MUST output ONLY valid JSON matching this exact structure:
 
 ${userMessage}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await generateContentWithTimeout(model, prompt);
   const text = result.response.text();
   const raw = safeJsonParse<Record<string, unknown>>(text);
 

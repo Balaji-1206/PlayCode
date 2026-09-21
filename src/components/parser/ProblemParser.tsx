@@ -34,6 +34,87 @@ interface CatalogExample {
 
 const EXAMPLES: CatalogExample[] = [
   {
+    label: "Find Closest Node to Given Two Nodes",
+    difficulty: "Medium",
+    tags: ["Graph", "DFS", "Juspay"],
+    timeComplexity: "O(n)",
+    statement: `You are given a directed graph of n nodes numbered from 0 to n - 1, where each node has at most one outgoing edge.
+
+The graph is represented with a given 0-indexed array edges of size n, indicating that there is a directed edge from node i to node edges[i]. If there is no outgoing edge from i, then edges[i] == -1.
+
+You are also given two integers, node1 and node2.
+
+Return the index of the node that can be reached from both node1 and node2, such that the maximum between the distance from node1 to that node, and from node2 to that node is minimized. If there are multiple answers that yield the same maximum distance, return the node with the smallest index. If no possible answer exists, return -1.`,
+    examples: `Example 1:
+Input:
+10
+4 4 8 -1 9 8 4 4 1 1
+5 6
+Output: 1
+
+Example 2:
+Input:
+4
+2 2 3 -1
+0 1
+Output: 2`,
+    constraints: `2 <= edges.length <= 10^5
+-1 <= edges[i] < edges.length
+edges[i] != i
+0 <= node1, node2 < edges.length`,
+  },
+  {
+    label: "Largest Sum Cycle",
+    difficulty: "Hard",
+    tags: ["Graph", "Cycle Detection", "Juspay"],
+    timeComplexity: "O(n)",
+    statement: `You are given a directed graph of N nodes numbered from 0 to N - 1, where each node has at most one outgoing edge.
+
+Edge[i] = j means node i points to node j. -1 means there is no outgoing edge.
+
+Find the maximum sum of node values belonging to a cycle in the graph. If no cycle exists, return -1.`,
+    examples: `Example 1:
+Input:
+5
+1 2 0 4 3
+Output: 7
+
+Example 2:
+Input:
+4
+1 2 3 -1
+Output: -1`,
+    constraints: `1 <= N <= 10^5
+-1 <= Edge[i] < N
+Edge[i] != i`,
+  },
+  {
+    label: "Node With Highest Edge Score",
+    difficulty: "Medium",
+    tags: ["Graph", "Counting", "Juspay"],
+    timeComplexity: "O(n)",
+    statement: `You are given a directed graph with n nodes labeled from 0 to n - 1, where each node has exactly one outgoing edge.
+
+edges[i] = j means node i points to node j.
+
+The edge score of a node is the sum of the labels of all the nodes that have an edge pointing to it.
+
+Return the node with the highest edge score. If multiple nodes have the same edge score, return the node with the smallest index.`,
+    examples: `Example 1:
+Input:
+6
+1 0 0 0 1 1
+Output: 1
+
+Example 2:
+Input:
+4
+1 0 3 2
+Output: 2`,
+    constraints: `2 <= edges.length <= 10^5
+0 <= edges[i] < edges.length`,
+  },
+  {
     label: "Two Sum",
     difficulty: "Easy",
     tags: ["Array", "Hash Table"],

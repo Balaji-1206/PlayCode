@@ -243,3 +243,121 @@ test("Output Delimiter: Extracts last delimiter block when user code also prints
   assert.equal(officialOutput, "[0, 1]");
   assert.ok(userLogs.includes("user debug:"));
 });
+
+// ─── 10. Juspay Graph Problems Integrity ──────────────────────────────────────
+test("Juspay Problems: All 3 problems are in catalog, have rich public and hidden test cases, and resolve via getProblemSession", async () => {
+  const { PROBLEM_CATALOG } = await import("@/lib/problemCatalog");
+  const juspayKeys = ["closest-meeting-node", "largest-sum-cycle", "highest-edge-score"];
+
+  for (const key of juspayKeys) {
+    const problem = PROBLEM_CATALOG[key];
+    assert.ok(problem, `Problem ${key} must exist in PROBLEM_CATALOG`);
+    assert.ok(problem.testCases.public.length >= 3, `${key} must have at least 3 public tests`);
+    assert.ok(problem.testCases.hidden.length >= 10, `${key} must have at least 10 hidden tests`);
+    assert.ok(problem.starterCode.cpp.includes("main()"), `${key} C++ starter code must include main()`);
+
+    const session = await getProblemSession(key);
+    assert.ok(session, `Session for ${key} must resolve from catalog`);
+    assert.ok(session.hiddenTestCases.length >= 10);
+    assert.ok(session.driverCode.cpp.length > 0);
+  }
+});
+
+// ─── 11. User-Defined Main Function Detection ──────────────────────────────────
+test("User Main Detection: prepareCombinedCode omits driverCode when user defines main(), preventing redefinition errors", async () => {
+  const { userCodeHasMain, prepareCombinedCode } = await import("@/app/api/code/execute/route");
+
+  const cppWithMain = `
+#include <iostream>
+using namespace std;
+int main() {
+    cout << "Hello" << endl;
+    return 0;
+}
+`;
+  assert.equal(userCodeHasMain(cppWithMain, "cpp"), true);
+
+  const cppWithoutMain = `
+class Solution {
+public:
+    int solve() { return 42; }
+};
+`;
+  assert.equal(userCodeHasMain(cppWithoutMain, "cpp"), false);
+
+  const mockDriver = `
+int main() {
+    Solution sol;
+    cout << sol.solve() << endl;
+    return 0;
+}
+`;
+
+  const combinedWhenUserHasMain = prepareCombinedCode(cppWithMain, mockDriver, "cpp");
+  assert.ok(!combinedWhenUserHasMain.includes("Solution sol;"), "Driver code must NOT be appended when user code defines main()");
+
+  const combinedWhenUserNoMain = prepareCombinedCode(cppWithoutMain, mockDriver, "cpp");
+  assert.ok(combinedWhenUserNoMain.includes("Solution sol;"), "Driver code MUST be appended when user code omits main()");
+});
+// ─── 12. Offline Catalog Matcher for Juspay Problems ────────────────────────
+test("Catalog Matcher: findMatchingCatalogProblem resolves Juspay problems offline without calling external AI", async () => {
+  const { findMatchingCatalogProblem } = await import("@/lib/problemCatalog");
+
+  const closestMatch = findMatchingCatalogProblem("Find Closest Node to Given Two Nodes", "directed graph of n nodes");
+  assert.ok(closestMatch, "Closest meeting node should match offline");
+  assert.equal(closestMatch?.title, "Find Closest Node to Given Two Nodes");
+
+  const cycleMatch = findMatchingCatalogProblem("Largest Sum Cycle", "maximum sum of node values belonging to a cycle");
+  assert.ok(cycleMatch, "Largest sum cycle should match offline");
+  assert.equal(cycleMatch?.title, "Largest Sum Cycle");
+
+  const scoreMatch = findMatchingCatalogProblem("Node With Highest Edge Score", "edge score of a node");
+  assert.ok(scoreMatch, "Highest edge score should match offline");
+  assert.equal(scoreMatch?.title, "Node With Highest Edge Score");
+});
+
+// ─── 13. Java Code Preparation Import Hoisting ───────────────────────────────
+test("Java Import Hoisting: prepareCombinedCode places all imports at file header and avoids duplicate public classes", async () => {
+  const { prepareCombinedCode } = await import("@/app/api/code/execute/route");
+
+  const userCode = `
+import java.util.HashMap;
+
+public class Solution {
+    public int solve() {
+        return 100;
+    }
+}
+`;
+
+  const driverCode = `
+import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        Solution s = new Solution();
+        System.out.println(s.solve());
+    }
+}
+`;
+
+  const combined = prepareCombinedCode(userCode, driverCode, "java");
+
+  // Verify all imports appear before any class declaration
+  const firstClassIndex = combined.indexOf("class ");
+  assert.ok(firstClassIndex > 0, "There must be class declarations in combined code");
+
+  const imports = combined.substring(0, firstClassIndex);
+  assert.ok(imports.includes("import java.util.*;"), "Standard utility import must be present");
+  assert.ok(imports.includes("import java.util.HashMap;"), "User import must be hoisted");
+  assert.ok(imports.includes("import java.util.Scanner;"), "Driver import must be hoisted");
+
+  // Verify no import appears after the first class definition
+  const classSection = combined.substring(firstClassIndex);
+  assert.ok(!classSection.includes("import "), "No imports should exist after class declaration begins");
+
+  // Verify Solution is not declared public alongside public class Main
+  assert.ok(!classSection.includes("public class Solution"), "Solution must not be public when Main is public");
+  assert.ok(classSection.includes("class Solution"), "Solution class must be declared package-private");
+  assert.ok(classSection.includes("public class Main"), "Main must remain public for JVM entry");
+});

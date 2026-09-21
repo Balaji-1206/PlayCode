@@ -9,7 +9,8 @@ import type {
 } from "@/types";
 import type { ParsedProblem } from "@/lib/schemas/problem";
 import type { CodeAnalysis } from "@/lib/schemas/analysis";
-import { LANGUAGES, DEFAULT_LANGUAGE } from "@/lib/languages";
+import { LANGUAGES } from "@/lib/languages";
+import { JUSPAY_PROBLEMS } from "@/lib/juspayProblems";
 
 // ─── Module-level Editor Instance & Draft Helpers ────────────────────────────
 
@@ -27,13 +28,25 @@ function saveDraftToStorage(problemId: string, lang: LanguageKey, code: string) 
   } catch {}
 }
 
+function getInitialTheme(): "light" | "dark" {
+  if (typeof window === "undefined") return "light";
+  try {
+    const stored = localStorage.getItem("dsa-theme");
+    if (stored === "dark" || stored === "light") return stored;
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch {}
+  return "light";
+}
+
+const DEFAULT_PROBLEM = JUSPAY_PROBLEMS["closest-meeting-node"];
+
 const INITIAL_CODE_BY_LANGUAGE: Record<LanguageKey, string> = {
-  python: LANGUAGES.python.defaultCode,
-  cpp: LANGUAGES.cpp.defaultCode,
-  java: LANGUAGES.java.defaultCode,
-  javascript: LANGUAGES.javascript.defaultCode,
-  go: LANGUAGES.go.defaultCode,
-  rust: LANGUAGES.rust.defaultCode,
+  python: DEFAULT_PROBLEM.starterCode.python,
+  cpp: DEFAULT_PROBLEM.starterCode.cpp,
+  java: DEFAULT_PROBLEM.starterCode.java,
+  javascript: DEFAULT_PROBLEM.starterCode.javascript,
+  go: DEFAULT_PROBLEM.starterCode.go,
+  rust: DEFAULT_PROBLEM.starterCode.rust,
 };
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -78,8 +91,8 @@ type PlaygroundStore = PlaygroundState & PlaygroundActions;
 
 export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
   // ── Initial state ──────────────────────────────────────────────────────────
-  selectedLanguage: DEFAULT_LANGUAGE,
-  code: LANGUAGES[DEFAULT_LANGUAGE].defaultCode,
+  selectedLanguage: "cpp",
+  code: DEFAULT_PROBLEM.starterCode.cpp,
   codeByLanguage: INITIAL_CODE_BY_LANGUAGE,
   isDraftSaved: true,
   activeTestCase: 0,
@@ -91,13 +104,13 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
   isCustomTestActive: false,
 
   // Step 2
-  viewMode: "parser",
+  viewMode: "playground",
   isParsing: false,
   parseError: null,
-  parsedProblem: null,
+  parsedProblem: DEFAULT_PROBLEM,
 
   // Step 3
-  problemSessionId: null,
+  problemSessionId: "closest-meeting-node",
 
   // Step 4
   activeBottomTab: "output",
@@ -106,7 +119,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => ({
   analysis: null,
 
   // Theme
-  theme: "light",
+  theme: getInitialTheme(),
 
   // ── Editor actions ─────────────────────────────────────────────────────────
 

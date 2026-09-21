@@ -38,9 +38,11 @@ async function buildSafeProblemResponse(fullProblem: ParsedProblem) {
 
 // ─── OpenAI client ────────────────────────────────────────────────────────────
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAIClient(): OpenAI {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY || "missing",
+  });
+}
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -162,6 +164,7 @@ export async function POST(request: NextRequest) {
     }
 
     // OpenAI provider
+    const openai = getOpenAIClient();
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
       messages: [

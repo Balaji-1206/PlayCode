@@ -135,6 +135,110 @@ export function extractOutputAndLogs(rawStdout: string, expectedOutput?: string)
   };
 }
 
+// ─── Detect user-written main / entry point ───────────────────────────────────
+// If user writes their own main() (e.g. for competitive programming practice),
+// we avoid appending driver code to prevent redefinition errors.
+
+export function userCodeHasMain(code: string, language: string): boolean {
+  if (language === "cpp") {
+    return (
+      /\b(int|void)\s+main\s*\(/.test(code) ||
+      /\bmain\s*\([^)]*\)\s*\{/.test(code)
+    );
+  }
+  if (language === "java") {
+    return (
+      /\bpublic\s+static\s+void\s+main\s*\(/.test(code) ||
+      /\bvoid\s+main\s*\(/.test(code)
+    );
+  }
+  if (language === "go") {
+    return /\bfunc\s+main\s*\(/.test(code);
+  }
+  if (language === "rust") {
+    return /\bfn\s+main\s*\(/.test(code);
+  }
+  if (language === "python") {
+    return (
+      /__name__\s*==\s*['"]__main__['"]/.test(code) ||
+      /sys\.stdin/.test(code) ||
+      /\binput\s*\(/.test(code)
+    );
+  }
+  if (language === "javascript") {
+    return /fs\.readFileSync/.test(code) || /readline/.test(code);
+  }
+  return false;
+}
+
+// ─── Code preparation helper ──────────────────────────────────────────────────
+// Ensures essential standard library headers/imports and standard DSA structures
+// (ListNode, TreeNode) are included so problems compile and execute smoothly.
+// If the user provided their own main(), the driver code is omitted.
+
+export function prepareCombinedCode(code: string, driverCode: string, language: string): string {
+  const dsaDefs = getInjectedDsaDefinitions(code, driverCode, language);
+  const hasUserMain = userCodeHasMain(code, language);
+  const effectiveDriver = hasUserMain ? "" : driverCode;
+
+  if (language === "cpp") {
+    const headers = `#include <iostream>
+#include <vector>
+#include <string>
+#include <stack>
+#include <queue>
+#include <map>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <climits>
+#include <sstream>
+using namespace std;
+`;
+    const userCodeWithHeaders =
+      code.includes("<iostream>") ||
+      code.includes("<vector>") ||
+      code.includes("<bits/stdc++.h>")
+        ? code
+        : `${headers}\n${code}`;
+    const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithHeaders}` : userCodeWithHeaders;
+    return effectiveDriver ? `${codeWithDefs}\n\n${effectiveDriver}` : codeWithDefs;
+  }
+
+  if (language === "java") {
+    // Extract and hoist all imports to the very top of the compilation unit
+    const allImports = new Set<string>();
+    allImports.add("import java.util.*;");
+    allImports.add("import java.io.*;");
+
+    const stripImports = (src: string) => {
+      return src.replace(/^\s*import\s+[^;]+;\s*$/gm, (match) => {
+        allImports.add(match.trim());
+        return "";
+      });
+    };
+
+    const cleanCode = stripImports(code);
+    const cleanDefs = dsaDefs ? stripImports(dsaDefs) : "";
+    const cleanDriver = effectiveDriver ? stripImports(effectiveDriver) : "";
+
+    // If driverCode has public class Main, ensure non-Main classes are package-private
+    const nonPublicCode = effectiveDriver
+      ? cleanCode.replace(/public\s+class\s+([A-Za-z0-9_]+)/g, (match, className) => {
+          return className === "Main" ? match : `class ${className}`;
+        })
+      : cleanCode;
+
+    const importsHeader = Array.from(allImports).join("\n");
+    const bodyParts = [cleanDefs, nonPublicCode, cleanDriver].filter((p) => p && p.trim().length > 0);
+    return `${importsHeader}\n\n${bodyParts.join("\n\n")}`.trim();
+  }
+
+  const codeWithDefs = dsaDefs ? `${dsaDefs}\n${code}` : code;
+  return effectiveDriver ? `${codeWithDefs}\n\n${effectiveDriver}` : codeWithDefs;
+}
+
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -223,7 +327,7 @@ export async function POST(request: NextRequest) {
       input: z.string().max(10000),
       expectedOutput: z.string().max(10000),
     })
-  ).max(5);
+  ).max(15);
 
   let publicTests: { input: string; expectedOutput: string }[] = [];
   const rawPublicTests = (body as Record<string, unknown>).publicTests;
@@ -238,47 +342,6 @@ export async function POST(request: NextRequest) {
       { input: "[3,3]\n6", expectedOutput: "[0, 1]" },
     ];
   }
-
-// ─── Code preparation helper ──────────────────────────────────────────────────
-// Ensures essential standard library headers/imports and standard DSA structures
-// (ListNode, TreeNode) are included so problems compile and execute smoothly.
-
-function prepareCombinedCode(code: string, driverCode: string, language: string): string {
-  const dsaDefs = getInjectedDsaDefinitions(code, driverCode, language);
-
-  if (language === "cpp") {
-    const headers = `#include <iostream>
-#include <vector>
-#include <string>
-#include <stack>
-#include <queue>
-#include <map>
-#include <set>
-#include <unordered_map>
-#include <unordered_set>
-#include <algorithm>
-#include <sstream>
-using namespace std;
-`;
-    const userCodeWithHeaders = code.includes("<iostream>") || code.includes("<vector>")
-      ? code
-      : `${headers}\n${code}`;
-    const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithHeaders}` : userCodeWithHeaders;
-    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
-  }
-
-  if (language === "java") {
-    const imports = `import java.util.*;
-import java.io.*;
-`;
-    const userCodeWithImports = code.includes("import ") ? code : `${imports}\n${code}`;
-    const codeWithDefs = dsaDefs ? `${dsaDefs}\n${userCodeWithImports}` : userCodeWithImports;
-    return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
-  }
-
-  const codeWithDefs = dsaDefs ? `${dsaDefs}\n${code}` : code;
-  return driverCode ? `${codeWithDefs}\n\n${driverCode}` : codeWithDefs;
-}
 
   // ── 4. Combine user code with driver code ─────────────────────────────────
   const combinedCode = prepareCombinedCode(code, driverCode, language);

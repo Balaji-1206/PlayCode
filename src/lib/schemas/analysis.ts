@@ -158,8 +158,8 @@ export const AnalyzeRequestSchema = z.object({
     .min(1, "Code cannot be empty")
     .max(50000, "Code is too large"),
   language: z.enum(["python", "cpp", "java", "javascript", "go", "rust"]),
-  problemTitle: z.string().max(200),
-  problemDescription: z.string().max(4000),
+  problemTitle: z.string().max(300),
+  problemDescription: z.string().max(25000),
 });
 
 // ─── Exported TypeScript types ────────────────────────────────────────────────

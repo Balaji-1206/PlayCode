@@ -100,12 +100,22 @@ async function callExecuteApi(
   language: string,
   problemSessionId: string | null,
   publicTests: Array<{ input: string; expectedOutput: string }>,
-  runType: "run" | "submit"
+  runType: "run" | "submit",
+  problemTitle?: string,
+  problemId?: string
 ): Promise<ExecutionResult> {
   const res = await fetch("/api/code/execute", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, language, problemSessionId, publicTests, runType }),
+    body: JSON.stringify({
+      code,
+      language,
+      problemSessionId: problemSessionId || problemId,
+      problemTitle,
+      problemId,
+      publicTests,
+      runType,
+    }),
   });
   const data = (await res.json()) as ExecuteApiResponse;
   if (!res.ok) {
@@ -259,7 +269,13 @@ export default function Playground() {
 
     try {
       const result = await callExecuteApi(
-        code, selectedLanguage, problemSessionId, publicTests, "run"
+        code,
+        selectedLanguage,
+        problemSessionId,
+        publicTests,
+        "run",
+        displayProblem.title,
+        displayProblem.id
       );
       setOutput(result);
     } catch (err) {
@@ -268,7 +284,7 @@ export default function Playground() {
     } finally {
       setIsRunning(false);
     }
-  }, [code, selectedLanguage, problemSessionId, publicTests, setIsRunning, setOutput, setActiveBottomTab]);
+  }, [code, selectedLanguage, problemSessionId, publicTests, displayProblem, setIsRunning, setOutput, setActiveBottomTab]);
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
@@ -287,7 +303,13 @@ export default function Playground() {
 
     try {
       const result = await callExecuteApi(
-        code, selectedLanguage, problemSessionId, publicTests, "submit"
+        code,
+        selectedLanguage,
+        problemSessionId,
+        publicTests,
+        "submit",
+        displayProblem.title,
+        displayProblem.id
       );
       setOutput(result);
       setIsSubmitting(false);
@@ -296,7 +318,13 @@ export default function Playground() {
         const analysis = await analysisPromise;
         setAnalysis(analysis);
         setAnalysisStatus("ready");
-        setActiveBottomTab("analysis");
+        const isAllPassed =
+          result.status === "success" &&
+          result.testResults.every((r) => r.status === "pass") &&
+          (!result.hiddenSummary || result.hiddenSummary.passed === result.hiddenSummary.total);
+        if (isAllPassed) {
+          setActiveBottomTab("analysis");
+        }
       } catch (err) {
         setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
         setAnalysisStatus("error");
